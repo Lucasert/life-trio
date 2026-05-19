@@ -1,6 +1,6 @@
-# Remember Forever
+# life-trio
 
-Android-first personal productivity app with three local-first modules:
+life-trio is an Android-first, local-first app for three daily personal workflows:
 
 - Memo: quick notes, Markdown-style rich text shortcuts, checkboxes, tags, pinning, search, image attachment, speech-to-text input, and memo-to-plan conversion.
 - Ledger: fast expense/income entry, category chips, notes, monthly budget warning, pie chart, annual income/expense line chart.

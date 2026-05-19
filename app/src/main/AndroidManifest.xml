@@ -3,13 +3,13 @@
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
 
     <application
-        android:name=".RememberForeverApp"
+        android:name=".LifeTrioApp"
         android:allowBackup="true"
         android:icon="@mipmap/ic_launcher"
-        android:label="Remember Forever"
+        android:label="life-trio"
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
-        android:theme="@style/Theme.RememberForever">
+        android:theme="@style/Theme.LifeTrio">
         <activity
             android:name=".MainActivity"
             android:exported="true">

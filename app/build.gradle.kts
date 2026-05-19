@@ -6,11 +6,11 @@ plugins {
 }
 
 android {
-    namespace = "com.rememberforever"
+    namespace = "com.lifetrio"
     compileSdk = 35
 
     defaultConfig {
-        applicationId = "com.rememberforever"
+        applicationId = "com.lifetrio"
         minSdk = 26
         targetSdk = 35
         versionCode = 1

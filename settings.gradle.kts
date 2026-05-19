@@ -14,5 +14,5 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "RememberForever"
+rootProject.name = "life-trio"
 include(":app")
