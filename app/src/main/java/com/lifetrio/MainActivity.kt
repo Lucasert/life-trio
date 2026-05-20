@@ -230,7 +230,7 @@ private fun HomeScreen(container: AppContainer, navController: NavHostController
                 EmptyText("今天没有待办")
             }
         }
-        items(todayPlans.take(5), key = { it.occurrenceId }) { item ->
+        items(todayPlans.take(5), key = { "home-plan-${it.occurrenceId}" }) { item ->
             CompactPlanItem(item.title, item.note, item.status.name)
         }
     }
@@ -256,7 +256,7 @@ private fun BudgetSummaryCard(
             if (budgetState == null) {
                 Text("尚未设置预算", color = Color.Gray)
             } else {
-                Text("剩余 ${budgetState.remainingCents.toYuanText()} / ${budgetState.budgetCents.toYuanText()} �?)
+                Text("剩余 ${budgetState.remainingCents.toYuanText()} / ${budgetState.budgetCents.toYuanText()} 元")
                 val progress = (budgetState.spentCents.toFloat() / budgetState.budgetCents.coerceAtLeast(1)).coerceIn(0f, 1f)
                 LinearMeter(progress = progress, danger = warning)
             }
@@ -336,7 +336,7 @@ private fun MemoScreen(container: AppContainer, navController: NavHostController
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             item {
-                Text("备忘�?, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+                Text("备忘录", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
                 OutlinedTextField(
                     value = query,
                     onValueChange = { query = it },
@@ -368,7 +368,7 @@ private fun MemoScreen(container: AppContainer, navController: NavHostController
                         try {
                             speechLauncher.launch(intent)
                         } catch (_: ActivityNotFoundException) {
-                            scope.launch { snackbarHostState.showSnackbar("当前设备不可用语音识�?) }
+                            scope.launch { snackbarHostState.showSnackbar("当前设备不可用语音识别") }
                         }
                     },
                     onSave = {
@@ -377,7 +377,7 @@ private fun MemoScreen(container: AppContainer, navController: NavHostController
                                 id = editingId,
                                 title = title,
                                 body = body,
-                                tags = tags.split(",", "�?),
+                                tags = tags.split(",", "，"),
                                 isPinned = pinned,
                                 imageUris = imageUris
                             )
@@ -391,7 +391,7 @@ private fun MemoScreen(container: AppContainer, navController: NavHostController
                     }
                 )
             }
-            items(memos, key = { it.id }) { memo ->
+            items(memos, key = { "memo-${it.id}" }) { memo ->
                 MemoCard(
                     memo = memo,
                     onEdit = {
@@ -470,7 +470,7 @@ private fun EditorCard(
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(130.dp),
-                label = { Text("随手�?) }
+                label = { Text("随手记") }
             )
             OutlinedTextField(
                 value = tags,
@@ -479,7 +479,7 @@ private fun EditorCard(
                 label = { Text("标签，用逗号分隔") }
             )
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth()) {
-                Text("图片 $imageCount �?, color = Color.Gray)
+                Text("图片 $imageCount 张", color = Color.Gray)
                 Button(onClick = onSave, enabled = title.isNotBlank() || body.isNotBlank()) {
                     Text("保存")
                 }
@@ -498,11 +498,11 @@ private fun MemoCard(memo: MemoEntity, onEdit: () -> Unit, onToPlan: () -> Unit)
             }
             Text(memo.body, maxLines = 4, overflow = TextOverflow.Ellipsis, color = Color(0xFF444444))
             if (memo.imageUris.isNotBlank()) {
-                Text("�?${memo.imageUris.split("|").count { it.isNotBlank() }} 张图�?, color = Color.Gray, style = MaterialTheme.typography.labelMedium)
+                Text("含 ${memo.imageUris.split("|").count { it.isNotBlank() }} 张图片", color = Color.Gray, style = MaterialTheme.typography.labelMedium)
             }
             Row(horizontalArrangement = Arrangement.End, modifier = Modifier.fillMaxWidth()) {
                 TextButton(onClick = onEdit) { Text("编辑") }
-                TextButton(onClick = onToPlan) { Text("转计�?) }
+                TextButton(onClick = onToPlan) { Text("转计划") }
             }
         }
     }
@@ -576,7 +576,7 @@ private fun LedgerScreen(container: AppContainer) {
                     ) {
                         Icon(Icons.Default.AttachMoney, contentDescription = null)
                         Spacer(Modifier.width(6.dp))
-                        Text("记一�?)
+                        Text("记一笔")
                     }
                 }
             }
@@ -607,7 +607,7 @@ private fun LedgerScreen(container: AppContainer) {
         item {
             SectionTitle("本月流水")
         }
-        items(entries, key = { it.id }) { entry ->
+        items(entries, key = { "ledger-${it.id}" }) { entry ->
             LedgerEntryRow(entry)
         }
     }
@@ -617,7 +617,7 @@ private fun LedgerScreen(container: AppContainer) {
 @Composable
 private fun CategoryChips(selected: String, onSelected: (String) -> Unit, type: LedgerType) {
     val options = if (type == LedgerType.Expense) {
-        listOf("餐饮", "交�?, "购物", "住房", "娱乐", "医疗", "学习")
+        listOf("餐饮", "交通", "购物", "住房", "娱乐", "医疗", "学习")
     } else {
         listOf("工资", "奖金", "报销", "理财", "其他")
     }
@@ -644,7 +644,7 @@ private fun BudgetEditor(
     Card(shape = RoundedCornerShape(8.dp), colors = CardDefaults.cardColors(containerColor = if (current?.isWarning == true) Color(0xFFFFE4E6) else Color.White)) {
         Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text("预算预警", fontWeight = FontWeight.SemiBold)
-            Text(current?.let { "剩余 ${it.remainingCents.toYuanText()} 元，已用 ${it.spentCents.toYuanText()} �? } ?: "尚未设置本月预算")
+            Text(current?.let { "剩余 ${it.remainingCents.toYuanText()} 元，已用 ${it.spentCents.toYuanText()} 元" } ?: "尚未设置本月预算")
             LinearMeter(
                 progress = current?.let { it.spentCents.toFloat() / it.budgetCents.coerceAtLeast(1) }?.coerceIn(0f, 1f) ?: 0f,
                 danger = current?.isWarning == true
@@ -656,7 +656,7 @@ private fun BudgetEditor(
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                 modifier = Modifier.fillMaxWidth()
             )
-            Text("预警阈�?${(warningRatio * 100).toInt()}%")
+            Text("预警阈值 ${(warningRatio * 100).toInt()}%")
             Slider(value = warningRatio, onValueChange = onWarningRatio, valueRange = 0.5f..1f)
             Button(onClick = onSave, enabled = budgetText.toDoubleOrNull() != null) {
                 Text("保存预算")
@@ -676,6 +676,7 @@ private fun LedgerEntryRow(entry: LedgerEntryEntity) {
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun PlanScreen(container: AppContainer) {
     val scope = rememberCoroutineScope()
@@ -703,7 +704,7 @@ private fun PlanScreen(container: AppContainer) {
         item {
             Text("计划", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
             if (!container.planRepository.hasWorkdayCalendarFor(today.year)) {
-                Text("当前年份缺少中国法定工作日表，请维护节假日数据�?, color = Color(0xFFB45309))
+                Text("当前年份缺少中国法定工作日表，请维护节假日数据。", color = Color(0xFFB45309))
             }
         }
         item {
@@ -742,9 +743,9 @@ private fun PlanScreen(container: AppContainer) {
         }
         item {
             SectionTitle("今日待办")
-            if (todayItems.isEmpty()) EmptyText("今天还没有计�?)
+            if (todayItems.isEmpty()) EmptyText("今天还没有计划")
         }
-        items(todayItems, key = { it.occurrenceId }) { item ->
+        items(todayItems, key = { "plan-today-${it.occurrenceId}" }) { item ->
             Card(shape = RoundedCornerShape(8.dp), colors = CardDefaults.cardColors(containerColor = Color.White)) {
                 Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
                     Checkbox(
@@ -764,9 +765,9 @@ private fun PlanScreen(container: AppContainer) {
             }
         }
         item {
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Button(onClick = { scope.launch { container.planRepository.carryUnfinished(today, today.plusDays(1)) } }) {
-                    Text("未完成顺�?)
+                    Text("未完成顺延")
                 }
                 Button(onClick = { scope.launch { container.planRepository.generateOccurrences(today, today.plusDays(31)) } }) {
                     Text("刷新未来计划")
@@ -774,7 +775,7 @@ private fun PlanScreen(container: AppContainer) {
             }
         }
         item {
-            SectionTitle("打卡热力�?)
+            SectionTitle("打卡热力图")
             Heatmap(heatmap.associate { it.date to it.count }, today.minusDays(90), today)
         }
         item {
@@ -783,7 +784,7 @@ private fun PlanScreen(container: AppContainer) {
                 overrides = overrides,
                 onDate = { overrideDate = it },
                 onSetWorkday = {
-                    LocalDate.parseOrNull(overrideDate)?.let { date ->
+                    parseLocalDateOrNull(overrideDate)?.let { date ->
                         scope.launch {
                             container.planRepository.setWorkdayOverride(date, true)
                             container.planRepository.generateOccurrences(today, today.plusDays(31))
@@ -791,7 +792,7 @@ private fun PlanScreen(container: AppContainer) {
                     }
                 },
                 onSetHoliday = {
-                    LocalDate.parseOrNull(overrideDate)?.let { date ->
+                    parseLocalDateOrNull(overrideDate)?.let { date ->
                         scope.launch {
                             container.planRepository.setWorkdayOverride(date, false)
                             container.planRepository.generateOccurrences(today, today.plusDays(31))
@@ -799,7 +800,7 @@ private fun PlanScreen(container: AppContainer) {
                     }
                 },
                 onClear = {
-                    LocalDate.parseOrNull(overrideDate)?.let { date ->
+                    parseLocalDateOrNull(overrideDate)?.let { date ->
                         scope.launch {
                             container.planRepository.clearWorkdayOverride(date)
                             container.planRepository.generateOccurrences(today, today.plusDays(31))
@@ -811,12 +812,13 @@ private fun PlanScreen(container: AppContainer) {
         item {
             SectionTitle("全部计划")
         }
-        items(plans, key = { it.id }) { plan ->
+        items(plans, key = { "plan-${it.id}" }) { plan ->
             PlanRow(plan)
         }
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun WorkdayOverrideEditor(
     dateText: String,
@@ -828,21 +830,21 @@ private fun WorkdayOverrideEditor(
 ) {
     Card(shape = RoundedCornerShape(8.dp), colors = CardDefaults.cardColors(containerColor = Color.White)) {
         Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text("法定工作日维�?, fontWeight = FontWeight.SemiBold)
+            Text("法定工作日维护", fontWeight = FontWeight.SemiBold)
             OutlinedTextField(
                 value = dateText,
                 onValueChange = onDate,
                 label = { Text("日期 yyyy-MM-dd") },
                 modifier = Modifier.fillMaxWidth()
             )
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Button(onClick = onSetWorkday) { Text("设为工作�?) }
-                Button(onClick = onSetHoliday) { Text("设为休息�?) }
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Button(onClick = onSetWorkday) { Text("设为工作日") }
+                Button(onClick = onSetHoliday) { Text("设为休息日") }
                 TextButton(onClick = onClear) { Text("清除") }
             }
             if (overrides.isNotEmpty()) {
                 Text(
-                    overrides.take(3).joinToString("  ") { "${it.date}:${if (it.isWorkday) "�? else "�?}" },
+                    overrides.take(3).joinToString("  ") { "${it.date}:${if (it.isWorkday) "班" else "休"}" },
                     color = Color.Gray,
                     style = MaterialTheme.typography.labelMedium
                 )
@@ -886,7 +888,7 @@ private fun PlanEditor(
             when (rule) {
                 PlanRuleType.Weekly -> FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     (1..7).forEach { day ->
-                        FilterChip(selected = day in weekdays, onClick = { onWeekdayToggle(day) }, label = { Text("�?{weekdayName(day)}") })
+                        FilterChip(selected = day in weekdays, onClick = { onWeekdayToggle(day) }, label = { Text("周${weekdayName(day)}") })
                     }
                 }
                 PlanRuleType.Monthly -> FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -897,13 +899,13 @@ private fun PlanEditor(
                 PlanRuleType.EveryNDays -> OutlinedTextField(
                     value = interval,
                     onValueChange = onInterval,
-                    label = { Text("�?N �?) },
+                    label = { Text("每 N 天") },
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
                 )
                 else -> Unit
             }
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("未完成处�?, modifier = Modifier.weight(1f))
+                Text("未完成处理", modifier = Modifier.weight(1f))
                 FilterChip(
                     selected = carry == CarryStrategy.CarryNextDay,
                     onClick = { onCarry(CarryStrategy.CarryNextDay) },
@@ -981,7 +983,7 @@ private fun PieChart(values: List<CategoryTotal>) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Box(Modifier.size(10.dp).background(colors[index % colors.size], RoundedCornerShape(2.dp)))
                 Spacer(Modifier.width(8.dp))
-                Text("${item.category} ${item.totalCents.toYuanText()} �?)
+                Text("${item.category} ${item.totalCents.toYuanText()} 元")
             }
         }
     }
@@ -1005,8 +1007,26 @@ private fun LineChart(values: List<MonthTotal>) {
 @Composable
 private fun Heatmap(values: Map<LocalDate, Int>, start: LocalDate, end: LocalDate) {
     val dates = generateSequence(start) { it.plusDays(1) }.takeWhile { !it.isAfter(end) }.toList()
-    FlowRow(horizontalArrangement = Arrangement.spacedBy(3.dp), verticalArrangement = Arrangement.spacedBy(3.dp)) {
-        dates.forEach { date ->
+    Canvas(
+        Modifier
+            .fillMaxWidth()
+            .height(96.dp)
+            .background(Color.White, RoundedCornerShape(8.dp))
+            .padding(12.dp)
+    ) {
+        if (dates.isEmpty()) return@Canvas
+
+        val rows = 7
+        val columns = ((dates.size + rows - 1) / rows).coerceAtLeast(1)
+        val gap = 3.dp.toPx()
+        val cell = minOf(
+            (size.width - gap * (columns - 1)) / columns,
+            (size.height - gap * (rows - 1)) / rows
+        ).coerceAtLeast(1f)
+
+        dates.forEachIndexed { index, date ->
+            val column = index / rows
+            val row = index % rows
             val count = values[date] ?: 0
             val color = when {
                 count >= 4 -> Color(0xFF166534)
@@ -1014,7 +1034,11 @@ private fun Heatmap(values: Map<LocalDate, Int>, start: LocalDate, end: LocalDat
                 count == 1 -> Color(0xFFBBF7D0)
                 else -> Color(0xFFE5E7EB)
             }
-            Box(Modifier.size(12.dp).background(color, RoundedCornerShape(2.dp)))
+            drawRect(
+                color = color,
+                topLeft = Offset(column * (cell + gap), row * (cell + gap)),
+                size = Size(cell, cell)
+            )
         }
     }
 }
@@ -1067,18 +1091,18 @@ private fun PlanRuleType.label(): String = when (this) {
     PlanRuleType.Daily -> "每天"
     PlanRuleType.Weekly -> "每周"
     PlanRuleType.Monthly -> "每月"
-    PlanRuleType.EveryNDays -> "每N�?
-    PlanRuleType.LegalWorkday -> "法定工作�?
+    PlanRuleType.EveryNDays -> "每N天"
+    PlanRuleType.LegalWorkday -> "法定工作日"
 }
 
 private fun weekdayName(day: Int): String =
-    java.time.DayOfWeek.of(day).getDisplayName(TextStyle.SHORT, Locale.CHINESE).removePrefix("�?)
+    java.time.DayOfWeek.of(day).getDisplayName(TextStyle.SHORT, Locale.CHINESE).removePrefix("周")
 
 private fun <T> toggle(set: Set<T>, value: T): Set<T> =
     if (value in set) set - value else set + value
 
-private fun LocalDate.Companion.parseOrNull(value: String): LocalDate? =
-    runCatching { parse(value) }.getOrNull()
+private fun parseLocalDateOrNull(value: String): LocalDate? =
+    runCatching { LocalDate.parse(value) }.getOrNull()
 
 private suspend fun copyImageToPrivateStorage(context: Context, source: Uri): String = withContext(Dispatchers.IO) {
     val dir = File(context.filesDir, "memo_images").apply { mkdirs() }

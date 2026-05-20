@@ -33,7 +33,7 @@ class MemoRepository(
         val memoId = if (id == null || id == 0L) {
             memoDao.insert(
                 MemoEntity(
-                    title = title.ifBlank { body.take(16).ifBlank { "未命名备�? } },
+                    title = title.ifBlank { body.take(16).ifBlank { "未命名备忘" } },
                     body = body,
                     isPinned = isPinned,
                     imageUris = imageUris.joinToString("|"),
