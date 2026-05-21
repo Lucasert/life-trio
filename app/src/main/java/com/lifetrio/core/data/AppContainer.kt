@@ -6,8 +6,11 @@ import com.lifetrio.core.data.db.LifeTrioDatabase
 import com.lifetrio.core.data.repository.LedgerRepository
 import com.lifetrio.core.data.repository.MemoRepository
 import com.lifetrio.core.data.repository.PlanRepository
+import com.lifetrio.password.AndroidKeystorePasswordVaultCrypto
+import com.lifetrio.password.PasswordVaultRepository
 import com.lifetrio.plan.scheduler.ChinaWorkdayCalendar
 import com.lifetrio.plan.scheduler.PlanScheduler
+import java.io.File
 
 class AppContainer(context: Context) {
     val database: LifeTrioDatabase = Room.databaseBuilder(
@@ -31,5 +34,9 @@ class AppContainer(context: Context) {
         planDao = database.planDao(),
         workdayOverrideDao = database.workdayOverrideDao(),
         scheduler = scheduler
+    )
+    val passwordVaultRepository = PasswordVaultRepository(
+        vaultFile = File(context.applicationContext.filesDir, "password_vault.bin"),
+        crypto = AndroidKeystorePasswordVaultCrypto()
     )
 }

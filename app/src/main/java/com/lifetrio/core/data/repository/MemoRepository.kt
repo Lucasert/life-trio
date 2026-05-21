@@ -68,4 +68,8 @@ class MemoRepository(
     }
 
     suspend fun tagsForMemo(memoId: Long): List<TagEntity> = tagDao.getForMemo(memoId)
+
+    suspend fun deleteMemo(id: Long) {
+        memoDao.delete(id)
+    }
 }

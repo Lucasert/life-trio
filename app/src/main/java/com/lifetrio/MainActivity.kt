@@ -2,14 +2,21 @@ package com.lifetrio
 
 import android.content.Context
 import android.content.ActivityNotFoundException
+import android.content.ClipData
+import android.content.ClipboardManager
 import android.content.Intent
 import android.net.Uri
+import android.app.KeyguardManager
+import android.os.Build
 import android.os.Bundle
 import android.speech.RecognizerIntent
-import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.biometric.BiometricManager
+import androidx.biometric.BiometricPrompt
+import androidx.core.content.ContextCompat
+import androidx.fragment.app.FragmentActivity
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -42,9 +49,12 @@ import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.NoteAdd
+import androidx.compose.material.icons.filled.Password
 import androidx.compose.material.icons.filled.PushPin
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Star
+import androidx.compose.material.icons.filled.Visibility
+import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -70,6 +80,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -85,11 +96,16 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
@@ -106,7 +122,9 @@ import com.lifetrio.core.data.db.entity.PlanEntity
 import com.lifetrio.core.data.db.entity.PlanRuleType
 import com.lifetrio.core.data.db.entity.toAmountCents
 import com.lifetrio.core.data.db.entity.toYuanText
+import com.lifetrio.password.PasswordRecord
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -115,7 +133,7 @@ import java.time.YearMonth
 import java.time.format.TextStyle
 import java.util.Locale
 
-class MainActivity : ComponentActivity() {
+class MainActivity : FragmentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         val container = (application as LifeTrioApp).container
@@ -131,7 +149,8 @@ private enum class Destination(val route: String, val label: String) {
     Home("home", "首页"),
     Memo("memo", "备忘"),
     Ledger("ledger", "记账"),
-    Plan("plan", "计划")
+    Plan("plan", "计划"),
+    Password("password", "密码")
 }
 
 @Composable
@@ -163,6 +182,9 @@ private fun LifeTrioApp(container: AppContainer) {
             composable(Destination.Plan.route) {
                 PlanScreen(container)
             }
+            composable(Destination.Password.route) {
+                PasswordScreen(container)
+            }
         }
     }
 }
@@ -183,6 +205,7 @@ private fun BottomBar(navController: NavHostController) {
                             Destination.Memo -> Icons.Default.NoteAdd
                             Destination.Ledger -> Icons.Default.AccountBalanceWallet
                             Destination.Plan -> Icons.Default.EventRepeat
+                            Destination.Password -> Icons.Default.Password
                         },
                         contentDescription = destination.label
                     )
@@ -404,6 +427,20 @@ private fun MemoScreen(container: AppContainer, navController: NavHostController
                             tags = container.memoRepository.tagsForMemo(memo.id).joinToString(",") { it.name }
                         }
                     },
+                    onDelete = {
+                        scope.launch {
+                            container.memoRepository.deleteMemo(memo.id)
+                            if (editingId == memo.id) {
+                                editingId = null
+                                title = ""
+                                body = ""
+                                tags = ""
+                                pinned = false
+                                imageUris = emptyList()
+                            }
+                            snackbarHostState.showSnackbar("已删除备忘")
+                        }
+                    },
                     onToPlan = {
                         scope.launch {
                             container.planRepository.addPlan(
@@ -489,7 +526,7 @@ private fun EditorCard(
 }
 
 @Composable
-private fun MemoCard(memo: MemoEntity, onEdit: () -> Unit, onToPlan: () -> Unit) {
+private fun MemoCard(memo: MemoEntity, onEdit: () -> Unit, onDelete: () -> Unit, onToPlan: () -> Unit) {
     Card(shape = RoundedCornerShape(8.dp), colors = CardDefaults.cardColors(containerColor = Color.White)) {
         Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -502,6 +539,7 @@ private fun MemoCard(memo: MemoEntity, onEdit: () -> Unit, onToPlan: () -> Unit)
             }
             Row(horizontalArrangement = Arrangement.End, modifier = Modifier.fillMaxWidth()) {
                 TextButton(onClick = onEdit) { Text("编辑") }
+                TextButton(onClick = onDelete) { Text("删除") }
                 TextButton(onClick = onToPlan) { Text("转计划") }
             }
         }
@@ -608,7 +646,14 @@ private fun LedgerScreen(container: AppContainer) {
             SectionTitle("本月流水")
         }
         items(entries, key = { "ledger-${it.id}" }) { entry ->
-            LedgerEntryRow(entry)
+            LedgerEntryRow(
+                entry = entry,
+                onDelete = {
+                    scope.launch {
+                        container.ledgerRepository.deleteEntry(entry.id)
+                    }
+                }
+            )
         }
     }
 }
@@ -666,13 +711,16 @@ private fun BudgetEditor(
 }
 
 @Composable
-private fun LedgerEntryRow(entry: LedgerEntryEntity) {
+private fun LedgerEntryRow(entry: LedgerEntryEntity, onDelete: () -> Unit) {
     Card(shape = RoundedCornerShape(8.dp), colors = CardDefaults.cardColors(containerColor = Color.White)) {
         Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
             Text(entry.category, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
             Text((if (entry.type == LedgerType.Expense) "-" else "+") + entry.amountCents.toYuanText())
         }
         if (entry.note.isNotBlank()) Text(entry.note, Modifier.padding(start = 12.dp, end = 12.dp, bottom = 10.dp), color = Color.Gray)
+        Row(horizontalArrangement = Arrangement.End, modifier = Modifier.fillMaxWidth().padding(start = 12.dp, end = 12.dp, bottom = 8.dp)) {
+            TextButton(onClick = onDelete) { Text("删除") }
+        }
     }
 }
 
@@ -955,6 +1003,310 @@ private fun CompactPlanItem(title: String, note: String, status: String) {
 }
 
 @Composable
+private fun PasswordScreen(container: AppContainer) {
+    val context = LocalContext.current
+    val activity = context as? FragmentActivity
+    val scope = rememberCoroutineScope()
+    val snackbarHostState = remember { SnackbarHostState() }
+    val lifecycleOwner = LocalLifecycleOwner.current
+    val repository = container.passwordVaultRepository
+    val isUnlocked by repository.isUnlocked.collectAsState()
+    val records by repository.records.collectAsState()
+    var query by remember { mutableStateOf("") }
+    var editing by remember { mutableStateOf<PasswordRecord?>(null) }
+    var selected by remember { mutableStateOf<PasswordRecord?>(null) }
+
+    DisposableEffect(lifecycleOwner, repository) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_STOP) {
+                repository.lock()
+                editing = null
+                selected = null
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
+            repository.lock()
+        }
+    }
+
+    Scaffold(snackbarHost = { SnackbarHost(snackbarHostState) }) { padding ->
+        if (!isUnlocked) {
+            LockedPasswordScreen(
+                modifier = Modifier.padding(padding),
+                onUnlock = {
+                    if (activity == null) {
+                        scope.launch { snackbarHostState.showSnackbar("无法启动本机验证") }
+                    } else {
+                        requestPasswordVaultAuth(
+                            activity = activity,
+                            onSuccess = {
+                                scope.launch {
+                                    runCatching { repository.unlock() }
+                                        .onFailure { snackbarHostState.showSnackbar("保险库无法解密") }
+                                }
+                            },
+                            onError = { message ->
+                                scope.launch { snackbarHostState.showSnackbar(message) }
+                            }
+                        )
+                    }
+                }
+            )
+            return@Scaffold
+        }
+
+        PasswordVaultContent(
+            modifier = Modifier.padding(padding),
+            records = records.filter { it.matches(query) },
+            query = query,
+            onQuery = { query = it },
+            editing = editing,
+            selected = selected,
+            onNew = {
+                selected = null
+                editing = PasswordRecord(name = "", account = "", secret = "", target = "")
+            },
+            onEdit = {
+                selected = null
+                editing = it
+            },
+            onSelect = {
+                editing = null
+                selected = it
+            },
+            onCancelEdit = { editing = null },
+            onSave = { record ->
+                scope.launch {
+                    repository.save(record)
+                    editing = null
+                    snackbarHostState.showSnackbar("已保存")
+                }
+            },
+            onDelete = { record ->
+                scope.launch {
+                    repository.delete(record.id)
+                    selected = null
+                    editing = null
+                    snackbarHostState.showSnackbar("已删除")
+                }
+            },
+            onCopyAccount = { value ->
+                copyToClipboard(context, "life-trio 账号", value)
+                scope.launch { snackbarHostState.showSnackbar("账号已复制") }
+            },
+            onCopySecret = { value ->
+                copyToClipboard(context, "life-trio 密码", value)
+                scope.launch {
+                    snackbarHostState.showSnackbar("密码已复制，30 秒后清空剪贴板")
+                    delay(30_000)
+                    clearClipboardIfValueMatches(context, value)
+                }
+            }
+        )
+    }
+}
+
+@Composable
+private fun LockedPasswordScreen(modifier: Modifier = Modifier, onUnlock: () -> Unit) {
+    Column(
+        modifier = modifier
+            .fillMaxSize()
+            .background(AppColors.Background)
+            .padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        Text("密码管理", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+        Card(shape = RoundedCornerShape(8.dp), colors = CardDefaults.cardColors(containerColor = Color.White)) {
+            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text("需要验证本机密码或指纹", fontWeight = FontWeight.SemiBold)
+                Text("密码保险库只在验证通过后解密，离开页面或退到后台会立即锁定。", color = Color.Gray)
+                Button(onClick = onUnlock, modifier = Modifier.fillMaxWidth()) {
+                    Icon(Icons.Default.Password, contentDescription = null)
+                    Spacer(Modifier.width(8.dp))
+                    Text("解锁密码管理")
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun PasswordVaultContent(
+    modifier: Modifier = Modifier,
+    records: List<PasswordRecord>,
+    query: String,
+    onQuery: (String) -> Unit,
+    editing: PasswordRecord?,
+    selected: PasswordRecord?,
+    onNew: () -> Unit,
+    onEdit: (PasswordRecord) -> Unit,
+    onSelect: (PasswordRecord) -> Unit,
+    onCancelEdit: () -> Unit,
+    onSave: (PasswordRecord) -> Unit,
+    onDelete: (PasswordRecord) -> Unit,
+    onCopyAccount: (String) -> Unit,
+    onCopySecret: (String) -> Unit
+) {
+    LazyColumn(
+        modifier = modifier
+            .fillMaxSize()
+            .background(AppColors.Background)
+            .padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        item {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth()) {
+                Text("密码管理", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+                Button(onClick = onNew) {
+                    Icon(Icons.Default.Add, contentDescription = null)
+                    Spacer(Modifier.width(6.dp))
+                    Text("新增")
+                }
+            }
+        }
+        item {
+            OutlinedTextField(
+                value = query,
+                onValueChange = onQuery,
+                label = { Text("搜索名称、账号、网站或应用") },
+                leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
+                modifier = Modifier.fillMaxWidth()
+            )
+        }
+        if (editing != null) {
+            item(key = "password-editor-${editing.id}") {
+                PasswordEditor(record = editing, onSave = onSave, onCancel = onCancelEdit)
+            }
+        }
+        if (selected != null) {
+            item(key = "password-detail-${selected.id}") {
+                PasswordDetail(
+                    record = selected,
+                    onEdit = { onEdit(selected) },
+                    onDelete = { onDelete(selected) },
+                    onCopyAccount = { onCopyAccount(selected.account) },
+                    onCopySecret = { onCopySecret(selected.secret) }
+                )
+            }
+        }
+        item {
+            SectionTitle("全部密码")
+            if (records.isEmpty()) EmptyText("暂无密码记录")
+        }
+        items(records, key = { "password-${it.id}" }) { record ->
+            PasswordRow(record = record, onClick = { onSelect(record) })
+        }
+    }
+}
+
+@Composable
+private fun PasswordEditor(record: PasswordRecord, onSave: (PasswordRecord) -> Unit, onCancel: () -> Unit) {
+    var name by remember(record.id) { mutableStateOf(record.name) }
+    var account by remember(record.id) { mutableStateOf(record.account) }
+    var secret by remember(record.id) { mutableStateOf(record.secret) }
+    var target by remember(record.id) { mutableStateOf(record.target) }
+    var note by remember(record.id) { mutableStateOf(record.note) }
+    var showSecret by remember(record.id) { mutableStateOf(false) }
+
+    Card(shape = RoundedCornerShape(8.dp), colors = CardDefaults.cardColors(containerColor = Color.White)) {
+        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text(if (record.name.isBlank()) "新增密码" else "编辑密码", fontWeight = FontWeight.SemiBold)
+            OutlinedTextField(name, { name = it }, label = { Text("名称") }, modifier = Modifier.fillMaxWidth())
+            OutlinedTextField(account, { account = it }, label = { Text("账号") }, modifier = Modifier.fillMaxWidth())
+            OutlinedTextField(
+                value = secret,
+                onValueChange = { secret = it },
+                label = { Text("密码") },
+                visualTransformation = if (showSecret) VisualTransformation.None else PasswordVisualTransformation(),
+                trailingIcon = {
+                    IconButton(onClick = { showSecret = !showSecret }) {
+                        Icon(if (showSecret) Icons.Default.VisibilityOff else Icons.Default.Visibility, contentDescription = "显示或隐藏密码")
+                    }
+                },
+                modifier = Modifier.fillMaxWidth()
+            )
+            OutlinedTextField(target, { target = it }, label = { Text("网站或应用") }, modifier = Modifier.fillMaxWidth())
+            OutlinedTextField(note, { note = it }, label = { Text("备注") }, modifier = Modifier.fillMaxWidth())
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                Button(
+                    onClick = {
+                        onSave(
+                            record.copy(
+                                name = name.trim(),
+                                account = account.trim(),
+                                secret = secret,
+                                target = target.trim(),
+                                note = note.trim()
+                            )
+                        )
+                    },
+                    enabled = name.isNotBlank() && secret.isNotBlank(),
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Text("保存")
+                }
+                TextButton(onClick = onCancel) { Text("取消") }
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun PasswordDetail(
+    record: PasswordRecord,
+    onEdit: () -> Unit,
+    onDelete: () -> Unit,
+    onCopyAccount: () -> Unit,
+    onCopySecret: () -> Unit
+) {
+    var showSecret by remember(record.id) { mutableStateOf(false) }
+    Card(shape = RoundedCornerShape(8.dp), colors = CardDefaults.cardColors(containerColor = Color.White)) {
+        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text(record.name, fontWeight = FontWeight.Bold)
+            Text("账号：${record.account.ifBlank { "未填写" }}")
+            Text("网站/应用：${record.target.ifBlank { "未填写" }}", color = Color.Gray)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("密码：${if (showSecret) record.secret else "••••••••"}", modifier = Modifier.weight(1f))
+                IconButton(onClick = { showSecret = !showSecret }) {
+                    Icon(if (showSecret) Icons.Default.VisibilityOff else Icons.Default.Visibility, contentDescription = "显示或隐藏密码")
+                }
+            }
+            if (record.note.isNotBlank()) Text(record.note, color = Color.Gray)
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Button(onClick = onCopyAccount, enabled = record.account.isNotBlank()) { Text("复制账号") }
+                Button(onClick = onCopySecret) { Text("复制密码") }
+                TextButton(onClick = onEdit) { Text("编辑") }
+                TextButton(onClick = onDelete) { Text("删除") }
+            }
+        }
+    }
+}
+
+@Composable
+private fun PasswordRow(record: PasswordRecord, onClick: () -> Unit) {
+    Card(
+        modifier = Modifier.fillMaxWidth().clickable(onClick = onClick),
+        shape = RoundedCornerShape(8.dp),
+        colors = CardDefaults.cardColors(containerColor = Color.White)
+    ) {
+        Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+            Icon(Icons.Default.Password, contentDescription = null, tint = AppColors.Blue)
+            Spacer(Modifier.width(10.dp))
+            Column(Modifier.weight(1f)) {
+                Text(record.name, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(record.account, color = Color.Gray, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
+            if (record.target.isNotBlank()) {
+                AssistChip(onClick = onClick, label = { Text(record.target, maxLines = 1, overflow = TextOverflow.Ellipsis) })
+            }
+        }
+    }
+}
+
+@Composable
 private fun PieChart(values: List<CategoryTotal>) {
     if (values.isEmpty()) {
         EmptyText("暂无支出数据")
@@ -1103,6 +1455,80 @@ private fun <T> toggle(set: Set<T>, value: T): Set<T> =
 
 private fun parseLocalDateOrNull(value: String): LocalDate? =
     runCatching { LocalDate.parse(value) }.getOrNull()
+
+private fun requestPasswordVaultAuth(
+    activity: FragmentActivity,
+    onSuccess: () -> Unit,
+    onError: (String) -> Unit
+) {
+    val manager = BiometricManager.from(activity)
+    val authenticators = BiometricManager.Authenticators.BIOMETRIC_STRONG or
+        BiometricManager.Authenticators.DEVICE_CREDENTIAL
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+        when (manager.canAuthenticate(authenticators)) {
+            BiometricManager.BIOMETRIC_SUCCESS -> Unit
+            BiometricManager.BIOMETRIC_ERROR_NONE_ENROLLED -> {
+                onError("请先在系统设置中录入指纹或设置锁屏密码")
+                return
+            }
+            else -> {
+                onError("当前设备不可用本机验证")
+                return
+            }
+        }
+    } else {
+        val keyguard = activity.getSystemService(Context.KEYGUARD_SERVICE) as KeyguardManager
+        val hasBiometric = manager.canAuthenticate(BiometricManager.Authenticators.BIOMETRIC_STRONG) ==
+            BiometricManager.BIOMETRIC_SUCCESS
+        if (!hasBiometric && !keyguard.isDeviceSecure) {
+            onError("请先在系统设置中录入指纹或设置锁屏密码")
+            return
+        }
+    }
+
+    val prompt = BiometricPrompt(
+        activity,
+        ContextCompat.getMainExecutor(activity),
+        object : BiometricPrompt.AuthenticationCallback() {
+            override fun onAuthenticationSucceeded(result: BiometricPrompt.AuthenticationResult) {
+                onSuccess()
+            }
+
+            override fun onAuthenticationError(errorCode: Int, errString: CharSequence) {
+                onError(errString.toString().ifBlank { "验证已取消" })
+            }
+
+            override fun onAuthenticationFailed() {
+                onError("验证失败，请重试")
+            }
+        }
+    )
+    val info = BiometricPrompt.PromptInfo.Builder()
+        .setTitle("解锁密码管理")
+        .setSubtitle("使用本机密码或指纹验证")
+        .apply {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                setAllowedAuthenticators(authenticators)
+            } else {
+                setDeviceCredentialAllowed(true)
+            }
+        }
+        .build()
+    prompt.authenticate(info)
+}
+
+private fun copyToClipboard(context: Context, label: String, value: String) {
+    val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+    clipboard.setPrimaryClip(ClipData.newPlainText(label, value))
+}
+
+private fun clearClipboardIfValueMatches(context: Context, value: String) {
+    val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+    val current = clipboard.primaryClip?.getItemAt(0)?.coerceToText(context)?.toString()
+    if (current == value) {
+        clipboard.setPrimaryClip(ClipData.newPlainText("life-trio", ""))
+    }
+}
 
 private suspend fun copyImageToPrivateStorage(context: Context, source: Uri): String = withContext(Dispatchers.IO) {
     val dir = File(context.filesDir, "memo_images").apply { mkdirs() }

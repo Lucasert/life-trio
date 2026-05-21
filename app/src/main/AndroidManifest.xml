@@ -4,7 +4,7 @@
 
     <application
         android:name=".LifeTrioApp"
-        android:allowBackup="true"
+        android:allowBackup="false"
         android:icon="@mipmap/ic_launcher"
         android:label="life-trio"
         android:roundIcon="@mipmap/ic_launcher_round"

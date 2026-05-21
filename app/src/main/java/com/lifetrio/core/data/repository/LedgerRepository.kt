@@ -43,6 +43,10 @@ class LedgerRepository(
         )
     }
 
+    suspend fun deleteEntry(id: Long) {
+        ledgerDao.delete(id)
+    }
+
     fun observeCategoryTotals(month: YearMonth): Flow<List<CategoryTotal>> =
         ledgerDao.categoryTotals(LedgerType.Expense, month.atDay(1), month.atEndOfMonth())
 

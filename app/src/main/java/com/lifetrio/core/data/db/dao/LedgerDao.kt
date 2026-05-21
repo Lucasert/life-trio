@@ -30,6 +30,9 @@ interface LedgerDao {
     @Insert
     suspend fun insert(entry: LedgerEntryEntity): Long
 
+    @Query("DELETE FROM ledger_entries WHERE id = :id")
+    suspend fun delete(id: Long)
+
     @Query("SELECT COALESCE(SUM(amountCents), 0) FROM ledger_entries WHERE type = :type AND date BETWEEN :start AND :end")
     suspend fun totalFor(type: LedgerType, start: LocalDate, end: LocalDate): Long
 

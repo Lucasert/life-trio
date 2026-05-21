@@ -61,6 +61,7 @@ dependencies {
     implementation("androidx.lifecycle:lifecycle-runtime-compose:$lifecycleVersion")
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:$lifecycleVersion")
     implementation("androidx.navigation:navigation-compose:$navVersion")
+    implementation("androidx.biometric:biometric:1.1.0")
     implementation("androidx.room:room-runtime:$roomVersion")
     implementation("androidx.room:room-ktx:$roomVersion")
     implementation("androidx.datastore:datastore-preferences:1.1.1")
