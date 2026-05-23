@@ -89,10 +89,11 @@ private fun BottomBar(navController: NavHostController) {
         tabs = Destination.entries.map { TabSpec(it.route, it.label, it.emoji) },
         selectedRoute = route,
         onSelect = { destination ->
-            navController.navigate(destination) {
-                launchSingleTop = true
-                popUpTo(Destination.Home.route) { saveState = true }
-                restoreState = true
+            if (destination != route) {
+                navController.navigate(destination) {
+                    launchSingleTop = true
+                    popUpTo(Destination.Home.route)
+                }
             }
         }
     )

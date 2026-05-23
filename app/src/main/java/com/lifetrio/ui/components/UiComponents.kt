@@ -39,9 +39,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.PathEffect
-import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextAlign
@@ -71,7 +69,7 @@ fun AppPage(
 }
 
 @Composable
-fun ScreenHeader(title: String, subtitle: String, action: String = "⋮") {
+fun ScreenHeader(title: String, subtitle: String) {
     Row(
         modifier = Modifier.fillMaxWidth(),
         verticalAlignment = Alignment.Top,
@@ -81,7 +79,6 @@ fun ScreenHeader(title: String, subtitle: String, action: String = "⋮") {
             Text(title, style = MaterialTheme.typography.headlineMedium, color = AppColors.Text, fontWeight = FontWeight.Black)
             Text(subtitle, style = MaterialTheme.typography.bodyMedium, color = AppColors.Muted)
         }
-        Text(action, color = AppColors.Text, style = MaterialTheme.typography.titleLarge)
     }
 }
 
@@ -234,9 +231,9 @@ fun EmptyState(title: String, subtitle: String, emoji: String) {
 }
 
 @Composable
-fun DashedUploadBox(text: String, trailing: String, onClick: () -> Unit) {
+fun DashedUploadBox(text: String, trailing: String, onClick: () -> Unit, modifier: Modifier = Modifier) {
     Box(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
             .height(54.dp)
             .clickable(onClick = onClick),
@@ -287,23 +284,6 @@ fun LifeTrioTabBar(tabs: List<TabSpec>, selectedRoute: String, onSelect: (String
                 Text(tab.emoji, style = MaterialTheme.typography.titleMedium)
                 Text(tab.label, color = if (selected) AppColors.Blue else AppColors.Muted, fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium)
             }
-        }
-    }
-}
-
-@Composable
-fun MiniLine(color: Color = AppColors.Blue) {
-    Canvas(Modifier.fillMaxWidth().height(90.dp)) {
-        val step = size.width / 4f
-        val points = listOf(0.72f, 0.48f, 0.62f, 0.34f, 0.42f)
-        points.zipWithNext().forEachIndexed { index, pair ->
-            drawLine(
-                color,
-                Offset(index * step, size.height * pair.first),
-                Offset((index + 1) * step, size.height * pair.second),
-                strokeWidth = 5f,
-                cap = StrokeCap.Round
-            )
         }
     }
 }

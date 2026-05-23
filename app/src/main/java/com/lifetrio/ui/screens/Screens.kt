@@ -1,14 +1,16 @@
 package com.lifetrio.ui.screens
 
 import android.app.KeyguardManager
-import android.content.ActivityNotFoundException
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.os.Build
+import android.provider.MediaStore
 import android.speech.RecognizerIntent
+import androidx.activity.result.ActivityResult
+import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.biometric.BiometricManager
@@ -35,7 +37,6 @@ import androidx.compose.material.icons.automirrored.filled.FormatListBulleted
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.CheckBox
 import androidx.compose.material.icons.filled.EventRepeat
-import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.Password
 import androidx.compose.material.icons.filled.PushPin
@@ -44,7 +45,6 @@ import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Checkbox
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -56,7 +56,6 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
@@ -72,7 +71,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
@@ -80,9 +78,11 @@ import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
+import androidx.core.content.FileProvider
 import androidx.fragment.app.FragmentActivity
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.navigation.NavHostController
 import com.lifetrio.core.data.AppContainer
 import com.lifetrio.core.data.db.dao.CategoryTotal
@@ -103,7 +103,6 @@ import com.lifetrio.ui.components.DashedUploadBox
 import com.lifetrio.ui.components.EmptyState
 import com.lifetrio.ui.components.FieldLabel
 import com.lifetrio.ui.components.FilterPill
-import com.lifetrio.ui.components.MiniLine
 import com.lifetrio.ui.components.PillSearchField
 import com.lifetrio.ui.components.PrimaryButton
 import com.lifetrio.ui.components.ScreenHeader
@@ -129,7 +128,7 @@ fun HomeScreen(container: AppContainer, navController: NavHostController, ledger
     val entries by container.ledgerRepository.observeThisMonthEntries().collectAsState(initial = emptyList())
 
     AppPage {
-        item { ScreenHeader("life-trio", "把记录、账目、计划和密码收进一个地方", "🔍") }
+        item { ScreenHeader("life-trio", "把记录、账目、计划和密码收进一个地方") }
         item {
             AppCard(danger = budget?.isWarning == true, onClick = { navController.navigate(ledgerRoute) }) {
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -168,19 +167,31 @@ fun MemoScreen(container: AppContainer, navController: NavHostController, planRo
     val context = LocalContext.current
     val snackbarHostState = remember { SnackbarHostState() }
     var query by remember { mutableStateOf("") }
-    var filter by remember { mutableStateOf("全部") }
     var editingId by remember { mutableStateOf<Long?>(null) }
     var title by remember { mutableStateOf("") }
     var body by remember { mutableStateOf("") }
     var tags by remember { mutableStateOf("") }
     var pinned by remember { mutableStateOf(false) }
     var imageUris by remember { mutableStateOf<List<String>>(emptyList()) }
+    var pendingCameraImagePath by remember { mutableStateOf<String?>(null) }
     val memos by container.memoRepository.search(query).collectAsState(initial = emptyList())
-    val visibleMemos = memos.filter { memoMatchesFilter(it, filter) }
 
-    val imagePicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
+    val imagePicker = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
         uri ?: return@rememberLauncherForActivityResult
-        scope.launch { imageUris = imageUris + copyImageToPrivateStorage(context, uri) }
+        scope.launch {
+            val copyResult = runCatching { copyImageToPrivateStorage(context, uri) }
+            copyResult.onSuccess { imageUris = imageUris + it }
+            if (copyResult.isFailure) snackbarHostState.showSnackbar("图片添加失败")
+        }
+    }
+    val cameraLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result: ActivityResult ->
+        val path = pendingCameraImagePath
+        if (result.resultCode == android.app.Activity.RESULT_OK && path != null) {
+            imageUris = imageUris + path
+        } else if (path != null) {
+            File(path).delete()
+        }
+        pendingCameraImagePath = null
     }
     val speechLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
         val text = result.data?.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)?.firstOrNull().orEmpty()
@@ -189,15 +200,8 @@ fun MemoScreen(container: AppContainer, navController: NavHostController, planRo
 
     Scaffold(snackbarHost = { SnackbarHost(snackbarHostState) }) { padding ->
         AppPage(modifier = Modifier.padding(padding)) {
-            item { ScreenHeader("随手记", "捕捉灵感・管理日常", "⋮") }
+            item { ScreenHeader("随手记", "捕捉灵感・管理日常") }
             item { PillSearchField(query, { query = it }, "搜索标题、正文或标签") }
-            item {
-                FlowRow(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    listOf("全部", "随手记", "记账", "计划").forEach { item ->
-                        FilterPill(item, filter == item, { filter = item })
-                    }
-                }
-            }
             item {
                 MemoEditorCard(
                     title = title,
@@ -212,17 +216,44 @@ fun MemoScreen(container: AppContainer, navController: NavHostController, planRo
                     onBold = { body += "**加粗文本**" },
                     onList = { body += "\n- " },
                     onTodo = { body += "\n- [ ] " },
-                    onImage = { imagePicker.launch("image/*") },
+                    onPickImage = {
+                        runCatching {
+                            imagePicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+                        }
+                            .onFailure {
+                                scope.launch { snackbarHostState.showSnackbar("当前设备不可用图片选择") }
+                            }
+                    },
+                    onTakePhoto = {
+                        val photoFile = createMemoImageFile(context)
+                        val photoUri = FileProvider.getUriForFile(
+                            context,
+                            "${context.packageName}.fileprovider",
+                            photoFile
+                        )
+                        val cameraIntent = createCameraIntent(context, photoUri)
+                        pendingCameraImagePath = photoFile.absolutePath
+                        runCatching { cameraLauncher.launch(cameraIntent) }
+                            .onFailure {
+                                pendingCameraImagePath = null
+                                photoFile.delete()
+                                scope.launch { snackbarHostState.showSnackbar("当前设备不可用相机") }
+                            }
+                    },
                     onVoice = {
                         val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
                             putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
                             putExtra(RecognizerIntent.EXTRA_LANGUAGE, Locale.CHINESE.toLanguageTag())
+                            putExtra(RecognizerIntent.EXTRA_PROMPT, "说出要记录的内容")
                         }
-                        try {
-                            speechLauncher.launch(intent)
-                        } catch (_: ActivityNotFoundException) {
+                        if (intent.resolveActivity(context.packageManager) == null) {
                             scope.launch { snackbarHostState.showSnackbar("当前设备不可用语音识别") }
+                            return@MemoEditorCard
                         }
+                        runCatching { speechLauncher.launch(intent) }
+                            .onFailure {
+                                scope.launch { snackbarHostState.showSnackbar("当前设备不可用语音识别") }
+                            }
                     },
                     onSave = {
                         scope.launch {
@@ -245,10 +276,10 @@ fun MemoScreen(container: AppContainer, navController: NavHostController, planRo
                     }
                 )
             }
-            if (visibleMemos.isEmpty()) {
+            if (memos.isEmpty()) {
                 item { EmptyState("暂无备忘", "先写下一条随手记", "📝") }
             }
-            items(visibleMemos, key = { "memo-${it.id}" }) { memo ->
+            items(memos, key = { "memo-${it.id}" }) { memo ->
                 MemoCard(
                     memo = memo,
                     onEdit = {
@@ -312,7 +343,7 @@ fun LedgerScreen(container: AppContainer) {
     var warningRatio by remember { mutableFloatStateOf(0.8f) }
 
     AppPage {
-        item { ScreenHeader("记账", "3 秒记录一笔收支", "＋") }
+        item { ScreenHeader("记账", "3 秒记录一笔收支") }
         item {
             AppCard {
                 Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
@@ -390,7 +421,7 @@ fun PlanScreen(container: AppContainer) {
 
     AppPage {
         item {
-            ScreenHeader("计划", "周期任务和每日待办", "📅")
+            ScreenHeader("计划", "周期任务和每日待办")
             if (!container.planRepository.hasWorkdayCalendarFor(today.year)) {
                 Text("当前年份缺少中国法定工作日表，请维护节假日数据。", color = Color(0xFFB45309))
             }
@@ -617,7 +648,8 @@ private fun MemoEditorCard(
     onBold: () -> Unit,
     onList: () -> Unit,
     onTodo: () -> Unit,
-    onImage: () -> Unit,
+    onPickImage: () -> Unit,
+    onTakePhoto: () -> Unit,
     onVoice: () -> Unit,
     onSave: () -> Unit
 ) {
@@ -639,7 +671,20 @@ private fun MemoEditorCard(
             FieldLabel("🏷️", "标签（点击 + 添加）")
             TagEditor(tags, onTags)
             FieldLabel("🖼️", "图片附件")
-            DashedUploadBox("+ 添加图片", if (imageCount == 0) "📷" else "$imageCount 张", onImage)
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
+                DashedUploadBox(
+                    "+ 添加图片",
+                    if (imageCount == 0) "🖼️" else "$imageCount 张",
+                    onPickImage,
+                    modifier = Modifier.weight(1f)
+                )
+                DashedUploadBox(
+                    "拍照",
+                    "📷",
+                    onTakePhoto,
+                    modifier = Modifier.weight(1f)
+                )
+            }
             PrimaryButton("💾 保存笔记", onSave, enabled = title.isNotBlank() || body.isNotBlank())
         }
     }
@@ -651,8 +696,7 @@ private fun TagEditor(value: String, onValueChange: (String) -> Unit) {
     val tags = value.split(",", "，").map { it.trim() }.filter { it.isNotBlank() }.distinct()
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            tags.forEach { tag -> SoftChip("$tag ×") }
-            SoftChip("+ 添加标签")
+            tags.forEach { tag -> SoftChip(tag) }
         }
         UnderlineField(value, onValueChange, "生活，账单")
     }
@@ -836,7 +880,7 @@ private fun CompactPlanItem(title: String, note: String, status: String) {
 private fun LockedPasswordScreen(modifier: Modifier = Modifier, onUnlock: () -> Unit) {
     Box(modifier = modifier.background(AppColors.Background)) {
         AppPage {
-            item { ScreenHeader("密码", "本机验证后访问保险库", "🔒") }
+            item { ScreenHeader("密码", "本机验证后访问保险库") }
             item {
                 AppCard {
                     Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
@@ -1010,7 +1054,7 @@ private fun PieChart(values: List<CategoryTotal>) {
 @Composable
 private fun LineChart(values: List<MonthTotal>) {
     if (values.size < 2) {
-        MiniLine()
+        EmptyState("暂无年度数据", "至少两个月有流水后会生成趋势图", "📈")
         return
     }
     val maxValue = values.maxOfOrNull { maxOf(it.expenseCents, it.incomeCents) }?.coerceAtLeast(1) ?: 1
@@ -1057,13 +1101,6 @@ private fun Meter(progress: Float, danger: Boolean) {
     }
 }
 
-private fun memoMatchesFilter(memo: MemoEntity, filter: String): Boolean = when (filter) {
-    "全部", "随手记" -> true
-    "记账" -> memo.title.contains("账") || memo.body.contains("账")
-    "计划" -> memo.title.contains("计划") || memo.body.contains("计划")
-    else -> true
-}
-
 private fun PlanRuleType.label(): String = when (this) {
     PlanRuleType.Daily -> "每天"
     PlanRuleType.Weekly -> "每周"
@@ -1081,6 +1118,7 @@ private fun <T> toggle(set: Set<T>, value: T): Set<T> =
 private fun parseLocalDateOrNull(value: String): LocalDate? =
     runCatching { LocalDate.parse(value) }.getOrNull()
 
+@Suppress("DEPRECATION")
 private fun requestPasswordVaultAuth(activity: FragmentActivity, onSuccess: () -> Unit, onError: (String) -> Unit) {
     val manager = BiometricManager.from(activity)
     val authenticators = BiometricManager.Authenticators.BIOMETRIC_STRONG or BiometricManager.Authenticators.DEVICE_CREDENTIAL
@@ -1139,10 +1177,27 @@ private fun clearClipboardIfValueMatches(context: Context, value: String) {
 }
 
 private suspend fun copyImageToPrivateStorage(context: Context, source: Uri): String = withContext(Dispatchers.IO) {
-    val dir = File(context.filesDir, "memo_images").apply { mkdirs() }
-    val file = File(dir, "${System.currentTimeMillis()}.jpg")
+    val file = createMemoImageFile(context)
     context.contentResolver.openInputStream(source)?.use { input ->
         file.outputStream().use { output -> input.copyTo(output) }
-    }
+    } ?: error("Cannot open image")
     file.absolutePath
+}
+
+private fun createCameraIntent(context: Context, output: Uri): Intent =
+    Intent(MediaStore.ACTION_IMAGE_CAPTURE).apply {
+        putExtra(MediaStore.EXTRA_OUTPUT, output)
+        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
+        context.packageManager.queryIntentActivities(this, 0).forEach { resolved ->
+            context.grantUriPermission(
+                resolved.activityInfo.packageName,
+                output,
+                Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
+            )
+        }
+    }
+
+private fun createMemoImageFile(context: Context): File {
+    val dir = File(context.filesDir, "memo_images").apply { mkdirs() }
+    return File(dir, "${System.currentTimeMillis()}_${System.nanoTime()}.jpg")
 }
