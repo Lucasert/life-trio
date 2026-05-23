@@ -1,6 +1,7 @@
 package com.lifetrio.core.data.repository
 
 import com.lifetrio.core.data.db.dao.CompletionCount
+import com.lifetrio.core.data.db.dao.OccurrenceCount
 import com.lifetrio.core.data.db.dao.PlanDao
 import com.lifetrio.core.data.db.dao.PlanWithOccurrence
 import com.lifetrio.core.data.db.dao.WorkdayOverrideDao
@@ -27,6 +28,9 @@ class PlanRepository(
 
     fun observeHeatmap(start: LocalDate, end: LocalDate): Flow<List<CompletionCount>> =
         planDao.completionCounts(start, end)
+
+    fun observeOccurrenceCounts(start: LocalDate, end: LocalDate): Flow<List<OccurrenceCount>> =
+        planDao.occurrenceCounts(start, end)
 
     fun observeWorkdayOverrides(): Flow<List<WorkdayOverrideEntity>> =
         workdayOverrideDao.observeAll()
@@ -55,8 +59,38 @@ class PlanRepository(
                 sourceMemoId = sourceMemoId
             )
         )
-        generateOccurrences(LocalDate.now(), LocalDate.now().plusDays(31))
+        generateOccurrences(LocalDate.now().minusDays(179), LocalDate.now().plusDays(31))
         return id
+    }
+
+    suspend fun updatePlan(
+        plan: PlanEntity,
+        title: String,
+        note: String,
+        ruleType: PlanRuleType,
+        weekdays: Set<Int>,
+        monthDays: Set<Int>,
+        intervalDays: Int,
+        carryStrategy: CarryStrategy
+    ) {
+        planDao.updatePlan(
+            plan.copy(
+                title = title,
+                note = note,
+                ruleType = ruleType,
+                selectedWeekdays = weekdays.sorted().joinToString(","),
+                selectedMonthDays = monthDays.sorted().joinToString(","),
+                intervalDays = intervalDays.coerceAtLeast(1),
+                carryStrategy = carryStrategy
+            )
+        )
+        val today = LocalDate.now()
+        planDao.deletePendingOccurrencesFrom(plan.id, today)
+        generateOccurrences(today.minusDays(179), today.plusDays(31))
+    }
+
+    suspend fun deletePlan(planId: Long) {
+        planDao.deletePlan(planId)
     }
 
     suspend fun generateOccurrences(from: LocalDate, to: LocalDate) {

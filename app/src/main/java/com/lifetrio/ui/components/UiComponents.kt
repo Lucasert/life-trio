@@ -69,15 +69,26 @@ fun AppPage(
 }
 
 @Composable
-fun ScreenHeader(title: String, subtitle: String) {
+fun ScreenHeader(
+    title: String,
+    subtitle: String,
+    trailing: (@Composable () -> Unit)? = null
+) {
     Row(
         modifier = Modifier.fillMaxWidth(),
-        verticalAlignment = Alignment.Top,
+        verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.SpaceBetween
     ) {
-        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Column(
+            modifier = Modifier.weight(1f),
+            verticalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
             Text(title, style = MaterialTheme.typography.headlineMedium, color = AppColors.Text, fontWeight = FontWeight.Black)
             Text(subtitle, style = MaterialTheme.typography.bodyMedium, color = AppColors.Muted)
+        }
+        if (trailing != null) {
+            Spacer(Modifier.width(12.dp))
+            trailing()
         }
     }
 }

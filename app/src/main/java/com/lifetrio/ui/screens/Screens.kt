@@ -1,10 +1,12 @@
 package com.lifetrio.ui.screens
 
+import android.Manifest
 import android.app.KeyguardManager
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
 import android.provider.MediaStore
@@ -17,13 +19,17 @@ import androidx.biometric.BiometricManager
 import androidx.biometric.BiometricPrompt
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -56,6 +62,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
@@ -93,10 +100,11 @@ import com.lifetrio.core.data.db.entity.LedgerType
 import com.lifetrio.core.data.db.entity.MemoEntity
 import com.lifetrio.core.data.db.entity.PlanEntity
 import com.lifetrio.core.data.db.entity.PlanRuleType
-import com.lifetrio.core.data.db.entity.WorkdayOverrideEntity
 import com.lifetrio.core.data.db.entity.toAmountCents
 import com.lifetrio.core.data.db.entity.toYuanText
 import com.lifetrio.password.PasswordRecord
+import com.lifetrio.plan.calendar.DeviceCalendarDayOverride
+import com.lifetrio.plan.calendar.DeviceCalendarReader
 import com.lifetrio.ui.components.AppCard
 import com.lifetrio.ui.components.AppPage
 import com.lifetrio.ui.components.DashedUploadBox
@@ -200,7 +208,7 @@ fun MemoScreen(container: AppContainer, navController: NavHostController, planRo
 
     Scaffold(snackbarHost = { SnackbarHost(snackbarHostState) }) { padding ->
         AppPage(modifier = Modifier.padding(padding)) {
-            item { ScreenHeader("随手记", "捕捉灵感・管理日常") }
+            item { ScreenHeader("备忘", "捕捉灵感・管理日常") }
             item { PillSearchField(query, { query = it }, "搜索标题、正文或标签") }
             item {
                 MemoEditorCard(
@@ -405,11 +413,25 @@ fun LedgerScreen(container: AppContainer) {
 @Composable
 fun PlanScreen(container: AppContainer) {
     val scope = rememberCoroutineScope()
+    val context = LocalContext.current
     val today = LocalDate.now()
+    var visibleMonth by remember { mutableStateOf(YearMonth.from(today)) }
+    var selectedDate by remember { mutableStateOf(today) }
+    val monthStart = visibleMonth.atDay(1)
+    val monthEnd = visibleMonth.atEndOfMonth()
+    val previewEnd = selectedDate.plusDays(6)
     val plans by container.planRepository.observePlans().collectAsState(initial = emptyList())
-    val todayItems by container.planRepository.observeToday(today).collectAsState(initial = emptyList())
-    val heatmap by container.planRepository.observeHeatmap(today.minusDays(90), today).collectAsState(initial = emptyList())
+    val selectedItems by container.planRepository.observeToday(selectedDate).collectAsState(initial = emptyList())
+    val previewItems by container.planRepository.observeOccurrenceCounts(selectedDate, previewEnd).collectAsState(initial = emptyList())
+    val monthCounts by container.planRepository.observeOccurrenceCounts(monthStart, monthEnd).collectAsState(initial = emptyList())
+    val heatmap by container.planRepository.observeHeatmap(today.minusDays(179), today).collectAsState(initial = emptyList())
     val overrides by container.planRepository.observeWorkdayOverrides().collectAsState(initial = emptyList())
+    var calendarOverrides by remember { mutableStateOf<List<DeviceCalendarDayOverride>>(emptyList()) }
+    var calendarMessage by remember { mutableStateOf("未连接手机日历") }
+    var hasCalendarPermission by remember {
+        mutableStateOf(ContextCompat.checkSelfPermission(context, Manifest.permission.READ_CALENDAR) == PackageManager.PERMISSION_GRANTED)
+    }
+    var editingPlan by remember { mutableStateOf<PlanEntity?>(null) }
     var title by remember { mutableStateOf("") }
     var note by remember { mutableStateOf("") }
     var rule by remember { mutableStateOf(PlanRuleType.Daily) }
@@ -417,100 +439,211 @@ fun PlanScreen(container: AppContainer) {
     var weekdays by remember { mutableStateOf(setOf(today.dayOfWeek.value)) }
     var monthDays by remember { mutableStateOf(setOf(today.dayOfMonth)) }
     var carry by remember { mutableStateOf(CarryStrategy.CarryNextDay) }
-    var overrideDate by remember { mutableStateOf(today.toString()) }
+
+    val calendarPermissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        hasCalendarPermission = granted
+        calendarMessage = if (granted) "已授权，准备同步手机日历" else "未授权手机日历，法定工作日使用内置规则"
+    }
+
+    suspend fun syncDeviceCalendar() {
+        if (!hasCalendarPermission) {
+            calendarMessage = "未授权手机日历，法定工作日使用内置规则"
+            return
+        }
+        val start = monthStart
+        val end = maxOf(monthEnd, previewEnd)
+        val entries = withContext(Dispatchers.IO) {
+            DeviceCalendarReader(context).readWorkdayOverrides(start, end)
+        }
+        calendarOverrides = entries
+        entries.forEach { container.planRepository.setWorkdayOverride(it.date, it.isWorkday) }
+        container.planRepository.generateOccurrences(start, end)
+        calendarMessage = if (entries.isEmpty()) "手机日历没有识别到班休事件" else "已同步 ${entries.size} 条手机日历班休"
+    }
+
+    LaunchedEffect(hasCalendarPermission, visibleMonth, selectedDate) {
+        syncDeviceCalendar()
+    }
+
+    fun resetPlanEditor() {
+        editingPlan = null
+        title = ""
+        note = ""
+        rule = PlanRuleType.Daily
+        interval = "2"
+        weekdays = setOf(today.dayOfWeek.value)
+        monthDays = setOf(today.dayOfMonth)
+        carry = CarryStrategy.CarryNextDay
+    }
 
     AppPage {
         item {
-            ScreenHeader("计划", "周期任务和每日待办")
+            ScreenHeader("计划", "周期计划 · 打卡追踪 · 热点洞察")
             if (!container.planRepository.hasWorkdayCalendarFor(today.year)) {
                 Text("当前年份缺少中国法定工作日表，请维护节假日数据。", color = Color(0xFFB45309))
             }
         }
         item {
-            PlanEditor(
-                title = title,
-                note = note,
-                rule = rule,
-                interval = interval,
-                weekdays = weekdays,
-                monthDays = monthDays,
-                carry = carry,
-                onTitle = { title = it },
-                onNote = { note = it },
-                onRule = { rule = it },
-                onInterval = { interval = it },
-                onWeekdayToggle = { weekdays = toggle(weekdays, it) },
-                onMonthDayToggle = { monthDays = toggle(monthDays, it) },
-                onCarry = { carry = it },
-                onSave = {
-                    scope.launch {
-                        container.planRepository.addPlan(title, note, rule, weekdays, monthDays, interval.toIntOrNull() ?: 1, today, carry)
-                        title = ""
-                        note = ""
+            BoxWithConstraints(Modifier.fillMaxWidth()) {
+                val wide = maxWidth >= 760.dp
+                if (wide) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(18.dp), modifier = Modifier.fillMaxWidth()) {
+                        Column(verticalArrangement = Arrangement.spacedBy(14.dp), modifier = Modifier.weight(0.72f)) {
+                            PlanEditorPanel(
+                                editingPlan = editingPlan,
+                                title = title,
+                                note = note,
+                                rule = rule,
+                                interval = interval,
+                                weekdays = weekdays,
+                                monthDays = monthDays,
+                                carry = carry,
+                                onTitle = { title = it },
+                                onNote = { note = it },
+                                onRule = { rule = it },
+                                onInterval = { interval = it },
+                                onWeekdayToggle = { weekdays = toggle(weekdays, it) },
+                                onMonthDayToggle = { monthDays = toggle(monthDays, it) },
+                                onCarry = { carry = it },
+                                onSave = {
+                                    scope.launch {
+                                        val current = editingPlan
+                                        if (current == null) {
+                                            container.planRepository.addPlan(title, note, rule, weekdays, monthDays, interval.toIntOrNull() ?: 1, selectedDate, carry)
+                                        } else {
+                                            container.planRepository.updatePlan(current, title, note, rule, weekdays, monthDays, interval.toIntOrNull() ?: 1, carry)
+                                        }
+                                        resetPlanEditor()
+                                    }
+                                },
+                                onCancel = if (editingPlan == null) null else ::resetPlanEditor
+                            )
+                            PlanListPanel(
+                                plans = plans,
+                                onEdit = { plan ->
+                                    editingPlan = plan
+                                    title = plan.title
+                                    note = plan.note
+                                    rule = plan.ruleType
+                                    interval = plan.intervalDays.toString()
+                                    weekdays = parseIntSet(plan.selectedWeekdays).ifEmpty { setOf(today.dayOfWeek.value) }
+                                    monthDays = parseIntSet(plan.selectedMonthDays).ifEmpty { setOf(today.dayOfMonth) }
+                                    carry = plan.carryStrategy
+                                },
+                                onDelete = { plan ->
+                                    scope.launch {
+                                        container.planRepository.deletePlan(plan.id)
+                                        if (editingPlan?.id == plan.id) resetPlanEditor()
+                                    }
+                                }
+                            )
+                        }
+                        PlanCalendarColumn(
+                            modifier = Modifier.weight(1.12f),
+                            visibleMonth = visibleMonth,
+                            selectedDate = selectedDate,
+                            today = today,
+                            plansByDate = monthCounts.associate { it.date to it.count },
+                            completionsByDate = heatmap.associate { it.date to it.count },
+                            workdayOverrides = overrides.associate { it.date to it.isWorkday },
+                            calendarOverrides = calendarOverrides.associateBy { it.date },
+                            selectedItems = selectedItems,
+                            previewCounts = previewItems.associate { it.date to it.count },
+                            calendarMessage = calendarMessage,
+                            hasCalendarPermission = hasCalendarPermission,
+                            onPreviousMonth = { visibleMonth = visibleMonth.minusMonths(1) },
+                            onNextMonth = { visibleMonth = visibleMonth.plusMonths(1) },
+                            onSelectDate = { selectedDate = it },
+                            onRequestCalendar = {
+                                if (hasCalendarPermission) {
+                                    scope.launch { syncDeviceCalendar() }
+                                } else {
+                                    calendarPermissionLauncher.launch(Manifest.permission.READ_CALENDAR)
+                                }
+                            },
+                            onComplete = { occurrenceId -> scope.launch { container.planRepository.completeOccurrence(occurrenceId, selectedDate) } },
+                            onSkip = { occurrenceId -> scope.launch { container.planRepository.skipOccurrence(occurrenceId) } }
+                        )
                     }
-                }
-            )
-        }
-        item { SectionTitle("今日待办") }
-        if (todayItems.isEmpty()) {
-            item { EmptyState("今天还没有计划", "新增一个周期计划后自动生成待办", "✅") }
-        }
-        items(todayItems, key = { "plan-today-${it.occurrenceId}" }) { item ->
-            AppCard {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Checkbox(false, onCheckedChange = { scope.launch { container.planRepository.completeOccurrence(item.occurrenceId, today) } })
-                    Column(Modifier.weight(1f)) {
-                        Text(item.title, color = AppColors.Text, fontWeight = FontWeight.SemiBold)
-                        if (item.note.isNotBlank()) Text(item.note, color = AppColors.Muted, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                } else {
+                    Column(verticalArrangement = Arrangement.spacedBy(14.dp), modifier = Modifier.fillMaxWidth()) {
+                        PlanEditorPanel(
+                            editingPlan = editingPlan,
+                            title = title,
+                            note = note,
+                            rule = rule,
+                            interval = interval,
+                            weekdays = weekdays,
+                            monthDays = monthDays,
+                            carry = carry,
+                            onTitle = { title = it },
+                            onNote = { note = it },
+                            onRule = { rule = it },
+                            onInterval = { interval = it },
+                            onWeekdayToggle = { weekdays = toggle(weekdays, it) },
+                            onMonthDayToggle = { monthDays = toggle(monthDays, it) },
+                            onCarry = { carry = it },
+                            onSave = {
+                                scope.launch {
+                                    val current = editingPlan
+                                    if (current == null) {
+                                        container.planRepository.addPlan(title, note, rule, weekdays, monthDays, interval.toIntOrNull() ?: 1, selectedDate, carry)
+                                    } else {
+                                        container.planRepository.updatePlan(current, title, note, rule, weekdays, monthDays, interval.toIntOrNull() ?: 1, carry)
+                                    }
+                                    resetPlanEditor()
+                                }
+                            },
+                            onCancel = if (editingPlan == null) null else ::resetPlanEditor
+                        )
+                        PlanListPanel(
+                            plans = plans,
+                            onEdit = { plan ->
+                                editingPlan = plan
+                                title = plan.title
+                                note = plan.note
+                                rule = plan.ruleType
+                                interval = plan.intervalDays.toString()
+                                weekdays = parseIntSet(plan.selectedWeekdays).ifEmpty { setOf(today.dayOfWeek.value) }
+                                monthDays = parseIntSet(plan.selectedMonthDays).ifEmpty { setOf(today.dayOfMonth) }
+                                carry = plan.carryStrategy
+                            },
+                            onDelete = { plan ->
+                                scope.launch {
+                                    container.planRepository.deletePlan(plan.id)
+                                    if (editingPlan?.id == plan.id) resetPlanEditor()
+                                }
+                            }
+                        )
+                        PlanCalendarColumn(
+                            visibleMonth = visibleMonth,
+                            selectedDate = selectedDate,
+                            today = today,
+                            plansByDate = monthCounts.associate { it.date to it.count },
+                            completionsByDate = heatmap.associate { it.date to it.count },
+                            workdayOverrides = overrides.associate { it.date to it.isWorkday },
+                            calendarOverrides = calendarOverrides.associateBy { it.date },
+                            selectedItems = selectedItems,
+                            previewCounts = previewItems.associate { it.date to it.count },
+                            calendarMessage = calendarMessage,
+                            hasCalendarPermission = hasCalendarPermission,
+                            onPreviousMonth = { visibleMonth = visibleMonth.minusMonths(1) },
+                            onNextMonth = { visibleMonth = visibleMonth.plusMonths(1) },
+                            onSelectDate = { selectedDate = it },
+                            onRequestCalendar = {
+                                if (hasCalendarPermission) {
+                                    scope.launch { syncDeviceCalendar() }
+                                } else {
+                                    calendarPermissionLauncher.launch(Manifest.permission.READ_CALENDAR)
+                                }
+                            },
+                            onComplete = { occurrenceId -> scope.launch { container.planRepository.completeOccurrence(occurrenceId, selectedDate) } },
+                            onSkip = { occurrenceId -> scope.launch { container.planRepository.skipOccurrence(occurrenceId) } }
+                        )
                     }
-                    TextButton(onClick = { scope.launch { container.planRepository.skipOccurrence(item.occurrenceId) } }) { Text("跳过") }
                 }
             }
         }
-        item {
-            FlowRow(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                FilterPill("未完成顺延", selected = false, onClick = { scope.launch { container.planRepository.carryUnfinished(today, today.plusDays(1)) } })
-                FilterPill("刷新未来计划", selected = false, onClick = { scope.launch { container.planRepository.generateOccurrences(today, today.plusDays(31)) } })
-            }
-        }
-        item { SectionTitle("打卡热力图") }
-        item { AppCard { Heatmap(heatmap.associate { it.date to it.count }, today.minusDays(90), today) } }
-        item {
-            WorkdayOverrideEditor(
-                dateText = overrideDate,
-                overrides = overrides,
-                onDate = { overrideDate = it },
-                onSetWorkday = {
-                    parseLocalDateOrNull(overrideDate)?.let { date ->
-                        scope.launch {
-                            container.planRepository.setWorkdayOverride(date, true)
-                            container.planRepository.generateOccurrences(today, today.plusDays(31))
-                        }
-                    }
-                },
-                onSetHoliday = {
-                    parseLocalDateOrNull(overrideDate)?.let { date ->
-                        scope.launch {
-                            container.planRepository.setWorkdayOverride(date, false)
-                            container.planRepository.generateOccurrences(today, today.plusDays(31))
-                        }
-                    }
-                },
-                onClear = {
-                    parseLocalDateOrNull(overrideDate)?.let { date ->
-                        scope.launch {
-                            container.planRepository.clearWorkdayOverride(date)
-                            container.planRepository.generateOccurrences(today, today.plusDays(31))
-                        }
-                    }
-                }
-            )
-        }
-        item { SectionTitle("全部计划") }
-        if (plans.isEmpty()) {
-            item { EmptyState("暂无计划", "创建每日、每周或法定工作日计划", "📅") }
-        }
-        items(plans, key = { "plan-${it.id}" }) { plan -> PlanRow(plan) }
     }
 }
 
@@ -775,6 +908,328 @@ private fun LedgerEntryRow(entry: LedgerEntryEntity, onDelete: () -> Unit) {
     }
 }
 
+@Composable
+private fun PlanEditorPanel(
+    editingPlan: PlanEntity?,
+    title: String,
+    note: String,
+    rule: PlanRuleType,
+    interval: String,
+    weekdays: Set<Int>,
+    monthDays: Set<Int>,
+    carry: CarryStrategy,
+    onTitle: (String) -> Unit,
+    onNote: (String) -> Unit,
+    onRule: (PlanRuleType) -> Unit,
+    onInterval: (String) -> Unit,
+    onWeekdayToggle: (Int) -> Unit,
+    onMonthDayToggle: (Int) -> Unit,
+    onCarry: (CarryStrategy) -> Unit,
+    onSave: () -> Unit,
+    onCancel: (() -> Unit)?
+) {
+    PlanEditor(
+        title = title,
+        note = note,
+        rule = rule,
+        interval = interval,
+        weekdays = weekdays,
+        monthDays = monthDays,
+        carry = carry,
+        onTitle = onTitle,
+        onNote = onNote,
+        onRule = onRule,
+        onInterval = onInterval,
+        onWeekdayToggle = onWeekdayToggle,
+        onMonthDayToggle = onMonthDayToggle,
+        onCarry = onCarry,
+        onSave = onSave,
+        onCancel = onCancel,
+        label = if (editingPlan == null) "计划编辑" else "编辑计划"
+    )
+}
+
+@Composable
+private fun PlanListPanel(
+    plans: List<PlanEntity>,
+    onEdit: (PlanEntity) -> Unit,
+    onDelete: (PlanEntity) -> Unit
+) {
+    AppCard {
+        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            FieldLabel("📋", "我的计划")
+            if (plans.isEmpty()) {
+                Text("暂无计划，请添加", color = AppColors.Muted, modifier = Modifier.align(Alignment.CenterHorizontally))
+            } else {
+                plans.forEach { plan ->
+                    PlanRow(
+                        plan = plan,
+                        onEdit = { onEdit(plan) },
+                        onDelete = { onDelete(plan) }
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun PlanCalendarColumn(
+    visibleMonth: YearMonth,
+    selectedDate: LocalDate,
+    today: LocalDate,
+    plansByDate: Map<LocalDate, Int>,
+    completionsByDate: Map<LocalDate, Int>,
+    workdayOverrides: Map<LocalDate, Boolean>,
+    calendarOverrides: Map<LocalDate, DeviceCalendarDayOverride>,
+    selectedItems: List<com.lifetrio.core.data.db.dao.PlanWithOccurrence>,
+    previewCounts: Map<LocalDate, Int>,
+    calendarMessage: String,
+    hasCalendarPermission: Boolean,
+    onPreviousMonth: () -> Unit,
+    onNextMonth: () -> Unit,
+    onSelectDate: (LocalDate) -> Unit,
+    onRequestCalendar: () -> Unit,
+    onComplete: (Long) -> Unit,
+    onSkip: (Long) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(14.dp), modifier = modifier) {
+        CalendarPanel(
+            visibleMonth = visibleMonth,
+            selectedDate = selectedDate,
+            today = today,
+            plansByDate = plansByDate,
+            workdayOverrides = workdayOverrides,
+            calendarOverrides = calendarOverrides,
+            calendarMessage = calendarMessage,
+            hasCalendarPermission = hasCalendarPermission,
+            onPreviousMonth = onPreviousMonth,
+            onNextMonth = onNextMonth,
+            onSelectDate = onSelectDate,
+            onRequestCalendar = onRequestCalendar
+        )
+        SelectedDatePlanPanel(selectedDate, selectedItems, onComplete, onSkip)
+        WeekPreviewPanel(selectedDate, previewCounts)
+        HeatmapPanel(today = today, completionsByDate = completionsByDate, selectedDate = selectedDate, onSelectDate = onSelectDate)
+    }
+}
+
+@Composable
+private fun CalendarPanel(
+    visibleMonth: YearMonth,
+    selectedDate: LocalDate,
+    today: LocalDate,
+    plansByDate: Map<LocalDate, Int>,
+    workdayOverrides: Map<LocalDate, Boolean>,
+    calendarOverrides: Map<LocalDate, DeviceCalendarDayOverride>,
+    calendarMessage: String,
+    hasCalendarPermission: Boolean,
+    onPreviousMonth: () -> Unit,
+    onNextMonth: () -> Unit,
+    onSelectDate: (LocalDate) -> Unit,
+    onRequestCalendar: () -> Unit
+) {
+    AppCard {
+        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            FieldLabel("🗓️", "日历 & 打卡")
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth()) {
+                FilterPill("◀ 上月", selected = false, onClick = onPreviousMonth)
+                Text("${visibleMonth.year}年 ${visibleMonth.monthValue}月", color = AppColors.Text, fontWeight = FontWeight.Black)
+                FilterPill("下月 ▶", selected = false, onClick = onNextMonth)
+            }
+            CalendarMonthGrid(
+                visibleMonth = visibleMonth,
+                selectedDate = selectedDate,
+                today = today,
+                plansByDate = plansByDate,
+                workdayOverrides = workdayOverrides,
+                calendarOverrides = calendarOverrides,
+                onSelectDate = onSelectDate
+            )
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth()) {
+                Text(calendarMessage, color = AppColors.Muted, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+                TextButton(onClick = onRequestCalendar) {
+                    Text(if (hasCalendarPermission) "同步手机日历" else "连接手机日历")
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun CalendarMonthGrid(
+    visibleMonth: YearMonth,
+    selectedDate: LocalDate,
+    today: LocalDate,
+    plansByDate: Map<LocalDate, Int>,
+    workdayOverrides: Map<LocalDate, Boolean>,
+    calendarOverrides: Map<LocalDate, DeviceCalendarDayOverride>,
+    onSelectDate: (LocalDate) -> Unit
+) {
+    val firstDay = visibleMonth.atDay(1)
+    val leading = firstDay.dayOfWeek.value % 7
+    val days = (1..visibleMonth.lengthOfMonth()).map { visibleMonth.atDay(it) }
+    val cells = List(leading) { null } + days
+    val weeks = cells.chunked(7)
+    Column(verticalArrangement = Arrangement.spacedBy(7.dp)) {
+        Row(horizontalArrangement = Arrangement.spacedBy(7.dp), modifier = Modifier.fillMaxWidth()) {
+            listOf("日", "一", "二", "三", "四", "五", "六").forEach { day ->
+                Text(day, color = AppColors.Muted, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f), textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+            }
+        }
+        weeks.forEach { week ->
+            Row(horizontalArrangement = Arrangement.spacedBy(7.dp), modifier = Modifier.fillMaxWidth()) {
+                week.forEach { date ->
+                    CalendarDayCell(
+                        date = date,
+                        selected = date == selectedDate,
+                        isToday = date == today,
+                        planCount = date?.let { plansByDate[it] } ?: 0,
+                        workdayOverride = date?.let { workdayOverrides[it] },
+                        deviceTitle = date?.let { calendarOverrides[it]?.title },
+                        onClick = { if (date != null) onSelectDate(date) },
+                        modifier = Modifier.weight(1f)
+                    )
+                }
+                repeat(7 - week.size) {
+                    Spacer(Modifier.weight(1f).aspectRatio(1f))
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun CalendarDayCell(
+    date: LocalDate?,
+    selected: Boolean,
+    isToday: Boolean,
+    planCount: Int,
+    workdayOverride: Boolean?,
+    deviceTitle: String?,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val borderColor = when {
+        selected -> AppColors.Blue
+        isToday -> Color(0xFF93C5FD)
+        else -> AppColors.Border
+    }
+    val background = when {
+        selected -> AppColors.BlueSoft
+        planCount > 0 -> Color(0xFFF0FDF4)
+        else -> AppColors.Surface
+    }
+    Box(
+        modifier = modifier
+            .aspectRatio(1f)
+            .background(background, CircleShape)
+            .border(width = if (selected) 2.dp else 1.dp, color = borderColor, shape = CircleShape)
+            .clickable(enabled = date != null, onClick = onClick)
+            .padding(4.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        if (date != null) {
+            Text(date.dayOfMonth.toString(), color = AppColors.Text, fontWeight = if (selected || isToday) FontWeight.Bold else FontWeight.Normal)
+            if (workdayOverride != null) {
+                Text(if (workdayOverride) "班" else "休", color = if (workdayOverride) AppColors.Blue else AppColors.Red, style = MaterialTheme.typography.labelSmall, modifier = Modifier.align(Alignment.TopEnd))
+            }
+            if (planCount > 0) {
+                Text(planCount.toString(), color = AppColors.Green, style = MaterialTheme.typography.labelSmall, modifier = Modifier.align(Alignment.BottomCenter))
+            }
+            if (!deviceTitle.isNullOrBlank()) {
+                Box(Modifier.size(5.dp).background(AppColors.Yellow, CircleShape).align(Alignment.TopStart))
+            }
+        }
+    }
+}
+
+@Composable
+private fun SelectedDatePlanPanel(
+    selectedDate: LocalDate,
+    items: List<com.lifetrio.core.data.db.dao.PlanWithOccurrence>,
+    onComplete: (Long) -> Unit,
+    onSkip: (Long) -> Unit
+) {
+    AppCard {
+        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            FieldLabel("✅", "${selectedDate} 待办")
+            if (items.isEmpty()) {
+                Text("无计划", color = AppColors.Muted, modifier = Modifier.align(Alignment.CenterHorizontally))
+            } else {
+                items.forEach { item ->
+                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                        Checkbox(false, onCheckedChange = { onComplete(item.occurrenceId) })
+                        Column(Modifier.weight(1f)) {
+                            Text(item.title, color = AppColors.Text, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            if (item.note.isNotBlank()) Text(item.note, color = AppColors.Muted, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        }
+                        TextButton(onClick = { onSkip(item.occurrenceId) }) { Text("跳过") }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun WeekPreviewPanel(selectedDate: LocalDate, counts: Map<LocalDate, Int>) {
+    AppCard {
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            FieldLabel("🔮", "未来一周计划预览")
+            (0L..6L).forEach { offset ->
+                val date = selectedDate.plusDays(offset)
+                val count = counts[date] ?: 0
+                Row(horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth()) {
+                    Text(date.toString(), color = AppColors.Text, fontWeight = FontWeight.SemiBold)
+                    Text(if (count == 0) "无计划" else "${count} 项计划", color = if (count == 0) AppColors.Muted else AppColors.Blue)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun HeatmapPanel(
+    today: LocalDate,
+    completionsByDate: Map<LocalDate, Int>,
+    selectedDate: LocalDate,
+    onSelectDate: (LocalDate) -> Unit
+) {
+    val start = today.minusDays(179)
+    val dates = generateSequence(start) { it.plusDays(1) }.take(180).toList()
+    val columns = dates.chunked(7)
+    AppCard {
+        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            FieldLabel("🔥", "打卡热点图（近180天）")
+            Row(horizontalArrangement = Arrangement.spacedBy(4.dp), modifier = Modifier.fillMaxWidth()) {
+                columns.forEach { column ->
+                    Column(verticalArrangement = Arrangement.spacedBy(4.dp), modifier = Modifier.weight(1f)) {
+                        column.forEach { date ->
+                            val count = completionsByDate[date] ?: 0
+                            val color = when {
+                                date == selectedDate -> AppColors.Blue
+                                count >= 4 -> Color(0xFF166534)
+                                count >= 2 -> Color(0xFF22C55E)
+                                count == 1 -> Color(0xFFBBF7D0)
+                                else -> Color(0xFFE5E7EB)
+                            }
+                            Box(
+                                Modifier
+                                    .aspectRatio(1f)
+                                    .background(color, CircleShape)
+                                    .clickable { onSelectDate(date) }
+                            )
+                        }
+                    }
+                }
+            }
+            Text("颜色越深，打卡次数越多。点击热力格会联动到日历日期。", color = AppColors.Muted, style = MaterialTheme.typography.labelSmall)
+        }
+    }
+}
+
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun PlanEditor(
@@ -792,11 +1247,13 @@ private fun PlanEditor(
     onWeekdayToggle: (Int) -> Unit,
     onMonthDayToggle: (Int) -> Unit,
     onCarry: (CarryStrategy) -> Unit,
-    onSave: () -> Unit
+    onSave: () -> Unit,
+    onCancel: (() -> Unit)? = null,
+    label: String = if (onCancel == null) "计划内容" else "编辑计划"
 ) {
     AppCard {
         Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            FieldLabel("📌", "计划内容")
+            FieldLabel("📌", label)
             UnderlineField(title, onTitle, "计划名称")
             UnderlineField(note, onNote, "备注")
             FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -817,47 +1274,33 @@ private fun PlanEditor(
                 FilterPill("顺延", selected = carry == CarryStrategy.CarryNextDay, onClick = { onCarry(CarryStrategy.CarryNextDay) })
                 FilterPill("跳过", selected = carry == CarryStrategy.Skip, onClick = { onCarry(CarryStrategy.Skip) })
             }
-            PrimaryButton("保存计划", onSave, enabled = title.isNotBlank())
-        }
-    }
-}
-
-@Composable
-private fun WorkdayOverrideEditor(
-    dateText: String,
-    overrides: List<WorkdayOverrideEntity>,
-    onDate: (String) -> Unit,
-    onSetWorkday: () -> Unit,
-    onSetHoliday: () -> Unit,
-    onClear: () -> Unit
-) {
-    AppCard {
-        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            FieldLabel("🗓️", "法定工作日维护")
-            UnderlineField(dateText, onDate, "日期 yyyy-MM-dd")
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                FilterPill("设为工作日", false, onSetWorkday)
-                FilterPill("设为休息日", false, onSetHoliday)
-                TextButton(onClick = onClear) { Text("清除") }
-            }
-            if (overrides.isNotEmpty()) {
-                Text(overrides.take(3).joinToString("  ") { "${it.date}:${if (it.isWorkday) "班" else "休"}" }, color = AppColors.Muted)
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                PrimaryButton(if (onCancel == null) "保存计划" else "保存修改", onSave, enabled = title.isNotBlank(), modifier = Modifier.weight(1f))
+                if (onCancel != null) {
+                    TextButton(onClick = onCancel) { Text("取消") }
+                }
             }
         }
     }
 }
 
 @Composable
-private fun PlanRow(plan: PlanEntity) {
-    AppCard {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Icon(Icons.Default.EventRepeat, contentDescription = null, tint = AppColors.Blue)
-            Spacer(Modifier.width(10.dp))
-            Column {
-                Text(plan.title, color = AppColors.Text, fontWeight = FontWeight.SemiBold)
-                Text(plan.ruleType.label(), color = AppColors.Muted)
-            }
+private fun PlanRow(plan: PlanEntity, onEdit: () -> Unit, onDelete: () -> Unit) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier
+            .fillMaxWidth()
+            .border(1.dp, AppColors.Border, CircleShape)
+            .padding(start = 12.dp, top = 8.dp, end = 6.dp, bottom = 8.dp)
+    ) {
+        Icon(Icons.Default.EventRepeat, contentDescription = null, tint = AppColors.Blue, modifier = Modifier.size(20.dp))
+        Spacer(Modifier.width(10.dp))
+        Column(Modifier.weight(1f)) {
+            Text(plan.title, color = AppColors.Text, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(plan.ruleType.label(), color = AppColors.Muted, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
+        TextButton(onClick = onEdit) { Text("编辑") }
+        TextButton(onClick = onDelete) { Text("删除", color = AppColors.Red) }
     }
 }
 
@@ -916,11 +1359,7 @@ private fun PasswordVaultContent(
 ) {
     AppPage(modifier = modifier) {
         item {
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth()) {
-                Column {
-                    Text("密码", style = MaterialTheme.typography.headlineMedium, color = AppColors.Text, fontWeight = FontWeight.Black)
-                    Text("账号与密钥保险库", color = AppColors.Muted)
-                }
+            ScreenHeader("密码", "账号与密钥保险库") {
                 FilterPill("+ 新增", false, onNew)
             }
         }
@@ -1115,8 +1554,8 @@ private fun weekdayName(day: Int): String =
 private fun <T> toggle(set: Set<T>, value: T): Set<T> =
     if (value in set) set - value else set + value
 
-private fun parseLocalDateOrNull(value: String): LocalDate? =
-    runCatching { LocalDate.parse(value) }.getOrNull()
+private fun parseIntSet(value: String): Set<Int> =
+    value.split(",").mapNotNull { it.trim().toIntOrNull() }.toSet()
 
 @Suppress("DEPRECATION")
 private fun requestPasswordVaultAuth(activity: FragmentActivity, onSuccess: () -> Unit, onError: (String) -> Unit) {

@@ -26,6 +26,11 @@ data class CompletionCount(
     val count: Int
 )
 
+data class OccurrenceCount(
+    val date: LocalDate,
+    val count: Int
+)
+
 @Dao
 interface PlanDao {
     @Query("SELECT * FROM plans WHERE isActive = 1 ORDER BY createdAt DESC")
@@ -40,8 +45,21 @@ interface PlanDao {
     @Update
     suspend fun updatePlan(plan: PlanEntity)
 
+    @Query("DELETE FROM plans WHERE id = :planId")
+    suspend fun deletePlan(planId: Long)
+
     @Insert(onConflict = OnConflictStrategy.IGNORE)
     suspend fun insertOccurrence(occurrence: PlanOccurrenceEntity): Long
+
+    @Query(
+        """
+        DELETE FROM plan_occurrences
+        WHERE planId = :planId
+          AND date >= :from
+          AND status IN ('Pending', 'Carried')
+        """
+    )
+    suspend fun deletePendingOccurrencesFrom(planId: Long, from: LocalDate)
 
     @Query(
         """
@@ -54,6 +72,18 @@ interface PlanDao {
         """
     )
     fun observeToday(date: LocalDate): Flow<List<PlanWithOccurrence>>
+
+    @Query(
+        """
+        SELECT date, COUNT(*) AS count
+        FROM plan_occurrences
+        WHERE date BETWEEN :start AND :end
+          AND status IN ('Pending', 'Carried')
+        GROUP BY date
+        ORDER BY date
+        """
+    )
+    fun occurrenceCounts(start: LocalDate, end: LocalDate): Flow<List<OccurrenceCount>>
 
     @Query("SELECT * FROM plan_occurrences WHERE date = :date AND status IN ('Pending', 'Carried')")
     suspend fun pendingOn(date: LocalDate): List<PlanOccurrenceEntity>
