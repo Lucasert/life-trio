@@ -7,12 +7,13 @@ import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.graphics.BitmapFactory
 import android.net.Uri
 import android.os.Build
 import android.provider.MediaStore
 import android.speech.RecognizerIntent
+import android.util.Log
 import androidx.activity.result.ActivityResult
-import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.biometric.BiometricManager
@@ -21,6 +22,7 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Box
@@ -77,6 +79,8 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
@@ -182,14 +186,19 @@ fun MemoScreen(container: AppContainer, navController: NavHostController, planRo
     var pinned by remember { mutableStateOf(false) }
     var imageUris by remember { mutableStateOf<List<String>>(emptyList()) }
     var pendingCameraImagePath by remember { mutableStateOf<String?>(null) }
+    var selectedMemo by remember { mutableStateOf<MemoEntity?>(null) }
     val memos by container.memoRepository.search(query).collectAsState(initial = emptyList())
 
-    val imagePicker = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
+    val imagePicker = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result: ActivityResult ->
+        val uri = result.data?.data
         uri ?: return@rememberLauncherForActivityResult
         scope.launch {
             val copyResult = runCatching { copyImageToPrivateStorage(context, uri) }
             copyResult.onSuccess { imageUris = imageUris + it }
-            if (copyResult.isFailure) snackbarHostState.showSnackbar("图片添加失败")
+            copyResult.onFailure { error ->
+                Log.e("LifeTrioMemo", "Image copy failed", error)
+                snackbarHostState.showSnackbar("图片添加失败：${error.javaClass.simpleName}")
+            }
         }
     }
     val cameraLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result: ActivityResult ->
@@ -209,126 +218,186 @@ fun MemoScreen(container: AppContainer, navController: NavHostController, planRo
     Scaffold(snackbarHost = { SnackbarHost(snackbarHostState) }) { padding ->
         AppPage(modifier = Modifier.padding(padding)) {
             item { ScreenHeader("备忘", "捕捉灵感・管理日常") }
-            item { PillSearchField(query, { query = it }, "搜索标题、正文或标签") }
-            item {
-                MemoEditorCard(
-                    title = title,
-                    body = body,
-                    tags = tags,
-                    pinned = pinned,
-                    imageCount = imageUris.size,
-                    onTitle = { title = it },
-                    onBody = { body = it },
-                    onTags = { tags = it },
-                    onPinned = { pinned = it },
-                    onBold = { body += "**加粗文本**" },
-                    onList = { body += "\n- " },
-                    onTodo = { body += "\n- [ ] " },
-                    onPickImage = {
-                        runCatching {
-                            imagePicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
-                        }
-                            .onFailure {
-                                scope.launch { snackbarHostState.showSnackbar("当前设备不可用图片选择") }
+            if (selectedMemo == null) {
+                item { PillSearchField(query, { query = it }, "搜索标题、正文或标签") }
+                item {
+                    MemoEditorCard(
+                        title = title,
+                        body = body,
+                        tags = tags,
+                        pinned = pinned,
+                        imageCount = imageUris.size,
+                        onTitle = { title = it },
+                        onBody = { body = it },
+                        onTags = { tags = it },
+                        onPinned = { pinned = it },
+                        onBold = { body += "**加粗文本**" },
+                        onList = { body += "\n- " },
+                        onTodo = { body += "\n- [ ] " },
+                        onPickImage = {
+                            val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+                                addCategory(Intent.CATEGORY_OPENABLE)
+                                type = "image/*"
+                                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                                addFlags(Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION)
                             }
-                    },
-                    onTakePhoto = {
-                        val photoFile = createMemoImageFile(context)
-                        val photoUri = FileProvider.getUriForFile(
-                            context,
-                            "${context.packageName}.fileprovider",
-                            photoFile
-                        )
-                        val cameraIntent = createCameraIntent(context, photoUri)
-                        pendingCameraImagePath = photoFile.absolutePath
-                        runCatching { cameraLauncher.launch(cameraIntent) }
-                            .onFailure {
-                                pendingCameraImagePath = null
-                                photoFile.delete()
-                                scope.launch { snackbarHostState.showSnackbar("当前设备不可用相机") }
-                            }
-                    },
-                    onVoice = {
-                        val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
-                            putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
-                            putExtra(RecognizerIntent.EXTRA_LANGUAGE, Locale.CHINESE.toLanguageTag())
-                            putExtra(RecognizerIntent.EXTRA_PROMPT, "说出要记录的内容")
-                        }
-                        if (intent.resolveActivity(context.packageManager) == null) {
-                            scope.launch { snackbarHostState.showSnackbar("当前设备不可用语音识别") }
-                            return@MemoEditorCard
-                        }
-                        runCatching { speechLauncher.launch(intent) }
-                            .onFailure {
-                                scope.launch { snackbarHostState.showSnackbar("当前设备不可用语音识别") }
-                            }
-                    },
-                    onSave = {
-                        scope.launch {
-                            container.memoRepository.saveMemo(
-                                id = editingId,
-                                title = title,
-                                body = body,
-                                tags = tags.split(",", "，"),
-                                isPinned = pinned,
-                                imageUris = imageUris
+                            runCatching { imagePicker.launch(Intent.createChooser(intent, "选择图片")) }
+                                .onFailure { error ->
+                                    Log.e("LifeTrioMemo", "Image picker launch failed", error)
+                                    scope.launch { snackbarHostState.showSnackbar("图片选择失败：${error.javaClass.simpleName}") }
+                                }
+                        },
+                        onTakePhoto = {
+                            val photoFile = createMemoImageFile(context)
+                            val photoUri = FileProvider.getUriForFile(
+                                context,
+                                "${context.packageName}.fileprovider",
+                                photoFile
                             )
-                            editingId = null
-                            title = ""
-                            body = ""
-                            tags = ""
-                            pinned = false
-                            imageUris = emptyList()
-                            snackbarHostState.showSnackbar("已保存备忘")
-                        }
-                    }
-                )
-            }
-            if (memos.isEmpty()) {
-                item { EmptyState("暂无备忘", "先写下一条随手记", "📝") }
-            }
-            items(memos, key = { "memo-${it.id}" }) { memo ->
-                MemoCard(
-                    memo = memo,
-                    onEdit = {
-                        editingId = memo.id
-                        title = memo.title
-                        body = memo.body
-                        pinned = memo.isPinned
-                        imageUris = memo.imageUris.split("|").filter { it.isNotBlank() }
-                        scope.launch { tags = container.memoRepository.tagsForMemo(memo.id).joinToString(",") { it.name } }
-                    },
-                    onDelete = {
-                        scope.launch {
-                            container.memoRepository.deleteMemo(memo.id)
-                            if (editingId == memo.id) {
+                            val cameraIntent = createCameraIntent(context, photoUri)
+                            pendingCameraImagePath = photoFile.absolutePath
+                            runCatching { cameraLauncher.launch(cameraIntent) }
+                                .onFailure {
+                                    pendingCameraImagePath = null
+                                    photoFile.delete()
+                                    scope.launch { snackbarHostState.showSnackbar("当前设备不可用相机") }
+                                }
+                        },
+                        onVoice = {
+                            val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
+                                putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
+                                putExtra(RecognizerIntent.EXTRA_LANGUAGE, Locale.CHINESE.toLanguageTag())
+                                putExtra(RecognizerIntent.EXTRA_PROMPT, "说出要记录的内容")
+                            }
+                            if (intent.resolveActivity(context.packageManager) == null) {
+                                scope.launch { snackbarHostState.showSnackbar("当前设备不可用语音识别") }
+                                return@MemoEditorCard
+                            }
+                            runCatching { speechLauncher.launch(intent) }
+                                .onFailure {
+                                    scope.launch { snackbarHostState.showSnackbar("当前设备不可用语音识别") }
+                                }
+                        },
+                        onSave = {
+                            scope.launch {
+                                container.memoRepository.saveMemo(
+                                    id = editingId,
+                                    title = title,
+                                    body = body,
+                                    tags = tags.split(",", "，"),
+                                    isPinned = pinned,
+                                    imageUris = imageUris
+                                )
                                 editingId = null
                                 title = ""
                                 body = ""
                                 tags = ""
                                 pinned = false
                                 imageUris = emptyList()
+                                snackbarHostState.showSnackbar("已保存备忘")
                             }
-                            snackbarHostState.showSnackbar("已删除备忘")
                         }
-                    },
-                    onToPlan = {
-                        scope.launch {
-                            container.planRepository.addPlan(
-                                title = memo.title,
-                                note = memo.body.take(120),
-                                ruleType = PlanRuleType.Daily,
-                                weekdays = emptySet(),
-                                monthDays = emptySet(),
-                                intervalDays = 1,
-                                startDate = LocalDate.now(),
-                                carryStrategy = CarryStrategy.CarryNextDay,
-                                sourceMemoId = memo.id
-                            )
-                            navController.navigate(planRoute)
+                    )
+                }
+                if (memos.isEmpty()) {
+                    item { EmptyState("暂无备忘", "先写下一条随手记", "📝") }
+                }
+                items(memos, key = { "memo-${it.id}" }) { memo ->
+                    MemoCard(
+                        memo = memo,
+                        onOpen = { selectedMemo = memo },
+                        onEdit = {
+                            selectedMemo = null
+                            editingId = memo.id
+                            title = memo.title
+                            body = memo.body
+                            pinned = memo.isPinned
+                            imageUris = memo.imageUris.split("|").filter { it.isNotBlank() }
+                            scope.launch { tags = container.memoRepository.tagsForMemo(memo.id).joinToString(",") { it.name } }
+                        },
+                        onDelete = {
+                            scope.launch {
+                                container.memoRepository.deleteMemo(memo.id)
+                                if (selectedMemo?.id == memo.id) selectedMemo = null
+                                if (editingId == memo.id) {
+                                    editingId = null
+                                    title = ""
+                                    body = ""
+                                    tags = ""
+                                    pinned = false
+                                    imageUris = emptyList()
+                                }
+                                snackbarHostState.showSnackbar("已删除备忘")
+                            }
+                        },
+                        onToPlan = {
+                            scope.launch {
+                                container.planRepository.addPlan(
+                                    title = memo.title,
+                                    note = memo.body.take(120),
+                                    ruleType = PlanRuleType.Daily,
+                                    weekdays = emptySet(),
+                                    monthDays = emptySet(),
+                                    intervalDays = 1,
+                                    startDate = LocalDate.now(),
+                                    carryStrategy = CarryStrategy.CarryNextDay,
+                                    sourceMemoId = memo.id
+                                )
+                                navController.navigate(planRoute)
+                            }
                         }
+                    )
+                }
+            } else {
+                selectedMemo?.let { memo ->
+                    item(key = "memo-detail-${memo.id}") {
+                        MemoDetailCard(
+                            memo = memo,
+                            onBack = { selectedMemo = null },
+                            onEdit = {
+                                selectedMemo = null
+                                editingId = memo.id
+                                title = memo.title
+                                body = memo.body
+                                pinned = memo.isPinned
+                                imageUris = memo.imageUris.split("|").filter { it.isNotBlank() }
+                                scope.launch { tags = container.memoRepository.tagsForMemo(memo.id).joinToString(",") { it.name } }
+                            },
+                            onDelete = {
+                                scope.launch {
+                                    container.memoRepository.deleteMemo(memo.id)
+                                    selectedMemo = null
+                                    if (editingId == memo.id) {
+                                        editingId = null
+                                        title = ""
+                                        body = ""
+                                        tags = ""
+                                        pinned = false
+                                        imageUris = emptyList()
+                                    }
+                                    snackbarHostState.showSnackbar("已删除备忘")
+                                }
+                            },
+                            onToPlan = {
+                                scope.launch {
+                                    container.planRepository.addPlan(
+                                        title = memo.title,
+                                        note = memo.body.take(120),
+                                        ruleType = PlanRuleType.Daily,
+                                        weekdays = emptySet(),
+                                        monthDays = emptySet(),
+                                        intervalDays = 1,
+                                        startDate = LocalDate.now(),
+                                        carryStrategy = CarryStrategy.CarryNextDay,
+                                        sourceMemoId = memo.id
+                                    )
+                                    selectedMemo = null
+                                    navController.navigate(planRoute)
+                                }
+                            }
+                        )
                     }
-                )
+                }
             }
         }
     }
@@ -836,8 +905,8 @@ private fun TagEditor(value: String, onValueChange: (String) -> Unit) {
 }
 
 @Composable
-private fun MemoCard(memo: MemoEntity, onEdit: () -> Unit, onDelete: () -> Unit, onToPlan: () -> Unit) {
-    AppCard {
+private fun MemoCard(memo: MemoEntity, onOpen: () -> Unit, onEdit: () -> Unit, onDelete: () -> Unit, onToPlan: () -> Unit) {
+    AppCard(onClick = onOpen) {
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 if (memo.isPinned) Icon(Icons.Default.Star, contentDescription = "置顶", tint = AppColors.Yellow, modifier = Modifier.size(18.dp))
@@ -851,6 +920,73 @@ private fun MemoCard(memo: MemoEntity, onEdit: () -> Unit, onDelete: () -> Unit,
                 TextButton(onClick = onToPlan) { Text("转计划") }
             }
         }
+    }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun MemoDetailCard(
+    memo: MemoEntity,
+    onBack: () -> Unit,
+    onEdit: () -> Unit,
+    onDelete: () -> Unit,
+    onToPlan: () -> Unit
+) {
+    val images = memo.imageUris.split("|").filter { it.isNotBlank() }
+    AppCard {
+        Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                TextButton(onClick = onBack) { Text("返回") }
+                Spacer(Modifier.width(6.dp))
+                Text("备忘详情", color = AppColors.Text, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+                if (memo.isPinned) Icon(Icons.Default.Star, contentDescription = "置顶", tint = AppColors.Yellow, modifier = Modifier.size(20.dp))
+            }
+            Text(memo.title.ifBlank { "未命名备忘" }, color = AppColors.Text, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Black)
+            if (memo.body.isBlank()) {
+                Text("暂无正文", color = AppColors.Muted)
+            } else {
+                Text(memo.body, color = AppColors.Text)
+            }
+            Text("更新于 ${memo.updatedAt.toString().replace("T", " ").substringBefore(".")}", color = AppColors.Muted)
+            FieldLabel("🖼️", "图片附件")
+            if (images.isEmpty()) {
+                Text("暂无图片", color = AppColors.Muted)
+            } else {
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    images.forEach { path -> MemoImagePreview(path) }
+                }
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                FilterPill("编辑", false, onEdit)
+                FilterPill("转计划", false, onToPlan)
+                TextButton(onClick = onDelete) { Text("删除", color = AppColors.Red) }
+            }
+        }
+    }
+}
+
+@Composable
+private fun MemoImagePreview(path: String) {
+    val bitmap = remember(path) { BitmapFactory.decodeFile(path)?.asImageBitmap() }
+    if (bitmap == null) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(96.dp)
+                .background(AppColors.BlueSoft, CircleShape),
+            contentAlignment = Alignment.Center
+        ) {
+            Text("图片无法读取", color = AppColors.Muted)
+        }
+    } else {
+        Image(
+            bitmap = bitmap,
+            contentDescription = "备忘图片",
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(180.dp),
+            contentScale = ContentScale.Crop
+        )
     }
 }
 
