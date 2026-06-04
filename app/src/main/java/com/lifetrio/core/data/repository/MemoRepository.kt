@@ -69,6 +69,16 @@ class MemoRepository(
 
     suspend fun tagsForMemo(memoId: Long): List<TagEntity> = tagDao.getForMemo(memoId)
 
+    suspend fun updateMemoImages(id: Long, imageUris: List<String>): MemoEntity? {
+        val existing = memoDao.getById(id) ?: return null
+        val updated = existing.copy(
+            imageUris = imageUris.joinToString("|"),
+            updatedAt = Instant.now()
+        )
+        memoDao.update(updated)
+        return updated
+    }
+
     suspend fun deleteMemo(id: Long) {
         memoDao.delete(id)
     }

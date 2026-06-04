@@ -44,6 +44,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.FormatListBulleted
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.CheckBox
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.EventRepeat
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.Password
@@ -226,11 +227,15 @@ fun MemoScreen(container: AppContainer, navController: NavHostController, planRo
                         body = body,
                         tags = tags,
                         pinned = pinned,
-                        imageCount = imageUris.size,
+                        imageUris = imageUris,
                         onTitle = { title = it },
                         onBody = { body = it },
                         onTags = { tags = it },
                         onPinned = { pinned = it },
+                        onRemoveImage = { path ->
+                            imageUris = imageUris.filterNot { it == path }
+                            deleteMemoImageFile(context, path)
+                        },
                         onBold = { body += "**加粗文本**" },
                         onList = { body += "\n- " },
                         onTodo = { body += "\n- [ ] " },
@@ -393,6 +398,20 @@ fun MemoScreen(container: AppContainer, navController: NavHostController, planRo
                                     )
                                     selectedMemo = null
                                     navController.navigate(planRoute)
+                                }
+                            },
+                            onRemoveImage = { path ->
+                                scope.launch {
+                                    val nextImages = memo.imageUris.split("|").filter { it.isNotBlank() && it != path }
+                                    val updatedMemo = container.memoRepository.updateMemoImages(memo.id, nextImages)
+                                    if (updatedMemo != null) {
+                                        selectedMemo = updatedMemo
+                                        deleteMemoImageFile(context, path)
+                                        snackbarHostState.showSnackbar("已删除图片")
+                                    } else {
+                                        selectedMemo = null
+                                        snackbarHostState.showSnackbar("备忘已不存在")
+                                    }
                                 }
                             }
                         )
@@ -842,11 +861,12 @@ private fun MemoEditorCard(
     body: String,
     tags: String,
     pinned: Boolean,
-    imageCount: Int,
+    imageUris: List<String>,
     onTitle: (String) -> Unit,
     onBody: (String) -> Unit,
     onTags: (String) -> Unit,
     onPinned: (Boolean) -> Unit,
+    onRemoveImage: (String) -> Unit,
     onBold: () -> Unit,
     onList: () -> Unit,
     onTodo: () -> Unit,
@@ -876,7 +896,7 @@ private fun MemoEditorCard(
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
                 DashedUploadBox(
                     "+ 添加图片",
-                    if (imageCount == 0) "🖼️" else "$imageCount 张",
+                    if (imageUris.isEmpty()) "🖼️" else "${imageUris.size} 张",
                     onPickImage,
                     modifier = Modifier.weight(1f)
                 )
@@ -886,6 +906,13 @@ private fun MemoEditorCard(
                     onTakePhoto,
                     modifier = Modifier.weight(1f)
                 )
+            }
+            if (imageUris.isNotEmpty()) {
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    imageUris.forEach { path ->
+                        RemovableMemoImagePreview(path = path, onRemove = { onRemoveImage(path) })
+                    }
+                }
             }
             PrimaryButton("💾 保存笔记", onSave, enabled = title.isNotBlank() || body.isNotBlank())
         }
@@ -930,7 +957,8 @@ private fun MemoDetailCard(
     onBack: () -> Unit,
     onEdit: () -> Unit,
     onDelete: () -> Unit,
-    onToPlan: () -> Unit
+    onToPlan: () -> Unit,
+    onRemoveImage: (String) -> Unit
 ) {
     val images = memo.imageUris.split("|").filter { it.isNotBlank() }
     AppCard {
@@ -953,7 +981,7 @@ private fun MemoDetailCard(
                 Text("暂无图片", color = AppColors.Muted)
             } else {
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    images.forEach { path -> MemoImagePreview(path) }
+                    images.forEach { path -> RemovableMemoImagePreview(path = path, onRemove = { onRemoveImage(path) }) }
                 }
             }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
@@ -961,6 +989,23 @@ private fun MemoDetailCard(
                 FilterPill("转计划", false, onToPlan)
                 TextButton(onClick = onDelete) { Text("删除", color = AppColors.Red) }
             }
+        }
+    }
+}
+
+@Composable
+private fun RemovableMemoImagePreview(path: String, onRemove: () -> Unit) {
+    Box(modifier = Modifier.fillMaxWidth()) {
+        MemoImagePreview(path)
+        IconButton(
+            onClick = onRemove,
+            modifier = Modifier
+                .align(Alignment.TopEnd)
+                .padding(8.dp)
+                .background(AppColors.Surface, CircleShape)
+                .size(34.dp)
+        ) {
+            Icon(Icons.Default.Close, contentDescription = "删除图片", tint = AppColors.Red, modifier = Modifier.size(18.dp))
         }
     }
 }
@@ -1775,4 +1820,12 @@ private fun createCameraIntent(context: Context, output: Uri): Intent =
 private fun createMemoImageFile(context: Context): File {
     val dir = File(context.filesDir, "memo_images").apply { mkdirs() }
     return File(dir, "${System.currentTimeMillis()}_${System.nanoTime()}.jpg")
+}
+
+private fun deleteMemoImageFile(context: Context, path: String) {
+    val file = File(path)
+    val imageDir = File(context.filesDir, "memo_images")
+    if (runCatching { file.canonicalPath.startsWith(imageDir.canonicalPath) }.getOrDefault(false)) {
+        runCatching { file.delete() }
+    }
 }
