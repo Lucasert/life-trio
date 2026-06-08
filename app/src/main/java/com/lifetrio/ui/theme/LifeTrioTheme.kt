@@ -7,17 +7,17 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
 
 object AppColors {
-    val Background = Color(0xFFF8FAFC)
+    val Background = Color(0xFFF5F7FB)
     val Surface = Color.White
-    val Text = Color(0xFF1E293B)
-    val Muted = Color(0xFF64748B)
-    val Border = Color(0xFFE2E8F0)
-    val Blue = Color(0xFF3B82F6)
-    val BlueSoft = Color(0xFFEFF6FF)
-    val Green = Color(0xFF16A34A)
+    val Text = Color(0xFF172033)
+    val Muted = Color(0xFF667085)
+    val Border = Color(0xFFE1E7EF)
+    val Blue = Color(0xFF2563EB)
+    val BlueSoft = Color(0xFFEAF2FF)
+    val Green = Color(0xFF059669)
     val Yellow = Color(0xFFF59E0B)
-    val Red = Color(0xFFDC2626)
-    val DangerSoft = Color(0xFFFFE4E6)
+    val Red = Color(0xFFE11D48)
+    val DangerSoft = Color(0xFFFFEEF2)
 }
 
 @Composable

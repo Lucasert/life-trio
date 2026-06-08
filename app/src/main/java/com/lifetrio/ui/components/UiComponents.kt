@@ -1,7 +1,9 @@
 package com.lifetrio.ui.components
 
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -62,8 +64,8 @@ fun AppPage(
         modifier = modifier
             .fillMaxSize()
             .background(AppColors.Background),
-        contentPadding = PaddingValues(start = 20.dp, top = 18.dp, end = 20.dp, bottom = 18.dp),
-        verticalArrangement = Arrangement.spacedBy(14.dp),
+        contentPadding = PaddingValues(start = 20.dp, top = 20.dp, end = 20.dp, bottom = 28.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp),
         content = content
     )
 }
@@ -81,10 +83,10 @@ fun ScreenHeader(
     ) {
         Column(
             modifier = Modifier.weight(1f),
-            verticalArrangement = Arrangement.spacedBy(4.dp)
+            verticalArrangement = Arrangement.spacedBy(5.dp)
         ) {
             Text(title, style = MaterialTheme.typography.headlineMedium, color = AppColors.Text, fontWeight = FontWeight.Black)
-            Text(subtitle, style = MaterialTheme.typography.bodyMedium, color = AppColors.Muted)
+            Text(subtitle, style = MaterialTheme.typography.bodyMedium, color = AppColors.Muted, maxLines = 2, overflow = TextOverflow.Ellipsis)
         }
         if (trailing != null) {
             Spacer(Modifier.width(12.dp))
@@ -104,11 +106,12 @@ fun AppCard(
         modifier = modifier
             .fillMaxWidth()
             .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier),
-        shape = RoundedCornerShape(22.dp),
+        shape = RoundedCornerShape(8.dp),
         colors = CardDefaults.cardColors(containerColor = if (danger) AppColors.DangerSoft else AppColors.Surface),
-        elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
+        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
+        border = BorderStroke(1.dp, if (danger) AppColors.Red.copy(alpha = 0.18f) else AppColors.Border)
     ) {
-        Box(Modifier.padding(18.dp)) {
+        Box(Modifier.padding(16.dp)) {
             content()
         }
     }
@@ -125,7 +128,7 @@ fun PillSearchField(value: String, onValueChange: (String) -> Unit, placeholder:
         placeholder = { Text(placeholder, color = AppColors.Muted) },
         leadingIcon = { Text("🔎") },
         singleLine = true,
-        shape = CircleShape,
+        shape = RoundedCornerShape(12.dp),
         colors = TextFieldDefaults.colors(
             focusedContainerColor = AppColors.Surface,
             unfocusedContainerColor = AppColors.Surface,
@@ -190,9 +193,9 @@ fun PrimaryButton(text: String, onClick: () -> Unit, modifier: Modifier = Modifi
             .fillMaxWidth()
             .height(54.dp),
         enabled = enabled,
-        shape = RoundedCornerShape(28.dp),
+        shape = RoundedCornerShape(12.dp),
         colors = ButtonDefaults.buttonColors(containerColor = AppColors.Blue),
-        elevation = ButtonDefaults.buttonElevation(defaultElevation = 4.dp)
+        elevation = ButtonDefaults.buttonElevation(defaultElevation = 1.dp)
     ) {
         Text(text, fontWeight = FontWeight.Bold)
     }
@@ -229,7 +232,7 @@ fun EmptyState(title: String, subtitle: String, emoji: String) {
         ) {
             Box(
                 modifier = Modifier
-                    .size(58.dp)
+                    .size(54.dp)
                     .background(AppColors.BlueSoft, CircleShape),
                 contentAlignment = Alignment.Center
             ) {
@@ -255,7 +258,7 @@ fun DashedUploadBox(text: String, trailing: String, onClick: () -> Unit, modifie
                 color = AppColors.Border,
                 topLeft = Offset.Zero,
                 size = Size(size.width, size.height),
-                cornerRadius = CornerRadius(18.dp.toPx(), 18.dp.toPx()),
+                cornerRadius = CornerRadius(12.dp.toPx(), 12.dp.toPx()),
                 style = Stroke(width = 1.dp.toPx(), pathEffect = PathEffect.dashPathEffect(floatArrayOf(12f, 8f)))
             )
         }
@@ -274,11 +277,13 @@ fun DashedUploadBox(text: String, trailing: String, onClick: () -> Unit, modifie
 
 @Composable
 fun LifeTrioTabBar(tabs: List<TabSpec>, selectedRoute: String, onSelect: (String) -> Unit) {
+    val barShape = RoundedCornerShape(topStart = 18.dp, topEnd = 18.dp)
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .background(AppColors.Surface)
-            .padding(horizontal = 8.dp, vertical = 8.dp),
+            .background(AppColors.Surface, barShape)
+            .border(1.dp, AppColors.Border, barShape)
+            .padding(horizontal = 10.dp, vertical = 9.dp),
         horizontalArrangement = Arrangement.SpaceAround,
         verticalAlignment = Alignment.CenterVertically
     ) {
@@ -288,12 +293,19 @@ fun LifeTrioTabBar(tabs: List<TabSpec>, selectedRoute: String, onSelect: (String
                 modifier = Modifier
                     .weight(1f)
                     .clickable { onSelect(tab.route) }
-                    .padding(vertical = 4.dp),
+                    .background(if (selected) AppColors.BlueSoft else Color.Transparent, RoundedCornerShape(12.dp))
+                    .padding(vertical = 6.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.spacedBy(2.dp)
             ) {
                 Text(tab.emoji, style = MaterialTheme.typography.titleMedium)
-                Text(tab.label, color = if (selected) AppColors.Blue else AppColors.Muted, fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium)
+                Text(
+                    tab.label,
+                    color = if (selected) AppColors.Blue else AppColors.Muted,
+                    fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
             }
         }
     }

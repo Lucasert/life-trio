@@ -21,11 +21,6 @@ data class PlanWithOccurrence(
     val status: OccurrenceStatus
 )
 
-data class CompletionCount(
-    val date: LocalDate,
-    val count: Int
-)
-
 data class OccurrenceCount(
     val date: LocalDate,
     val count: Int
@@ -97,14 +92,4 @@ interface PlanDao {
     @Insert
     suspend fun insertCompletion(completion: PlanCompletionEntity)
 
-    @Query(
-        """
-        SELECT date, COUNT(*) AS count
-        FROM plan_completions
-        WHERE date BETWEEN :start AND :end
-        GROUP BY date
-        ORDER BY date
-        """
-    )
-    fun completionCounts(start: LocalDate, end: LocalDate): Flow<List<CompletionCount>>
 }

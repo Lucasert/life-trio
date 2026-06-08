@@ -1,6 +1,5 @@
 package com.lifetrio.core.data.repository
 
-import com.lifetrio.core.data.db.dao.CompletionCount
 import com.lifetrio.core.data.db.dao.OccurrenceCount
 import com.lifetrio.core.data.db.dao.PlanDao
 import com.lifetrio.core.data.db.dao.PlanWithOccurrence
@@ -25,9 +24,6 @@ class PlanRepository(
 
     fun observeToday(date: LocalDate = LocalDate.now()): Flow<List<PlanWithOccurrence>> =
         planDao.observeToday(date)
-
-    fun observeHeatmap(start: LocalDate, end: LocalDate): Flow<List<CompletionCount>> =
-        planDao.completionCounts(start, end)
 
     fun observeOccurrenceCounts(start: LocalDate, end: LocalDate): Flow<List<OccurrenceCount>> =
         planDao.occurrenceCounts(start, end)

@@ -512,7 +512,6 @@ fun PlanScreen(container: AppContainer) {
     val selectedItems by container.planRepository.observeToday(selectedDate).collectAsState(initial = emptyList())
     val previewItems by container.planRepository.observeOccurrenceCounts(selectedDate, previewEnd).collectAsState(initial = emptyList())
     val monthCounts by container.planRepository.observeOccurrenceCounts(monthStart, monthEnd).collectAsState(initial = emptyList())
-    val heatmap by container.planRepository.observeHeatmap(today.minusDays(179), today).collectAsState(initial = emptyList())
     val overrides by container.planRepository.observeWorkdayOverrides().collectAsState(initial = emptyList())
     var calendarOverrides by remember { mutableStateOf<List<DeviceCalendarDayOverride>>(emptyList()) }
     var calendarMessage by remember { mutableStateOf("未连接手机日历") }
@@ -566,7 +565,7 @@ fun PlanScreen(container: AppContainer) {
 
     AppPage {
         item {
-            ScreenHeader("计划", "周期计划 · 打卡追踪 · 热点洞察")
+            ScreenHeader("计划", "周期计划 · 日历同步 · 待办追踪")
             if (!container.planRepository.hasWorkdayCalendarFor(today.year)) {
                 Text("当前年份缺少中国法定工作日表，请维护节假日数据。", color = Color(0xFFB45309))
             }
@@ -632,7 +631,6 @@ fun PlanScreen(container: AppContainer) {
                             selectedDate = selectedDate,
                             today = today,
                             plansByDate = monthCounts.associate { it.date to it.count },
-                            completionsByDate = heatmap.associate { it.date to it.count },
                             workdayOverrides = overrides.associate { it.date to it.isWorkday },
                             calendarOverrides = calendarOverrides.associateBy { it.date },
                             selectedItems = selectedItems,
@@ -708,7 +706,6 @@ fun PlanScreen(container: AppContainer) {
                             selectedDate = selectedDate,
                             today = today,
                             plansByDate = monthCounts.associate { it.date to it.count },
-                            completionsByDate = heatmap.associate { it.date to it.count },
                             workdayOverrides = overrides.associate { it.date to it.isWorkday },
                             calendarOverrides = calendarOverrides.associateBy { it.date },
                             selectedItems = selectedItems,
@@ -1160,7 +1157,6 @@ private fun PlanCalendarColumn(
     selectedDate: LocalDate,
     today: LocalDate,
     plansByDate: Map<LocalDate, Int>,
-    completionsByDate: Map<LocalDate, Int>,
     workdayOverrides: Map<LocalDate, Boolean>,
     calendarOverrides: Map<LocalDate, DeviceCalendarDayOverride>,
     selectedItems: List<com.lifetrio.core.data.db.dao.PlanWithOccurrence>,
@@ -1192,7 +1188,6 @@ private fun PlanCalendarColumn(
         )
         SelectedDatePlanPanel(selectedDate, selectedItems, onComplete, onSkip)
         WeekPreviewPanel(selectedDate, previewCounts)
-        HeatmapPanel(today = today, completionsByDate = completionsByDate, selectedDate = selectedDate, onSelectDate = onSelectDate)
     }
 }
 
@@ -1367,46 +1362,6 @@ private fun WeekPreviewPanel(selectedDate: LocalDate, counts: Map<LocalDate, Int
                     Text(if (count == 0) "无计划" else "${count} 项计划", color = if (count == 0) AppColors.Muted else AppColors.Blue)
                 }
             }
-        }
-    }
-}
-
-@Composable
-private fun HeatmapPanel(
-    today: LocalDate,
-    completionsByDate: Map<LocalDate, Int>,
-    selectedDate: LocalDate,
-    onSelectDate: (LocalDate) -> Unit
-) {
-    val start = today.minusDays(179)
-    val dates = generateSequence(start) { it.plusDays(1) }.take(180).toList()
-    val columns = dates.chunked(7)
-    AppCard {
-        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            FieldLabel("🔥", "打卡热点图（近180天）")
-            Row(horizontalArrangement = Arrangement.spacedBy(4.dp), modifier = Modifier.fillMaxWidth()) {
-                columns.forEach { column ->
-                    Column(verticalArrangement = Arrangement.spacedBy(4.dp), modifier = Modifier.weight(1f)) {
-                        column.forEach { date ->
-                            val count = completionsByDate[date] ?: 0
-                            val color = when {
-                                date == selectedDate -> AppColors.Blue
-                                count >= 4 -> Color(0xFF166534)
-                                count >= 2 -> Color(0xFF22C55E)
-                                count == 1 -> Color(0xFFBBF7D0)
-                                else -> Color(0xFFE5E7EB)
-                            }
-                            Box(
-                                Modifier
-                                    .aspectRatio(1f)
-                                    .background(color, CircleShape)
-                                    .clickable { onSelectDate(date) }
-                            )
-                        }
-                    }
-                }
-            }
-            Text("颜色越深，打卡次数越多。点击热力格会联动到日历日期。", color = AppColors.Muted, style = MaterialTheme.typography.labelSmall)
         }
     }
 }
@@ -1684,27 +1639,6 @@ private fun LineChart(values: List<MonthTotal>) {
         values.zipWithNext().forEachIndexed { index, pair ->
             drawLine(AppColors.Red, Offset(index * step, y(pair.first.expenseCents)), Offset((index + 1) * step, y(pair.second.expenseCents)), strokeWidth = 5f, cap = StrokeCap.Round)
             drawLine(AppColors.Green, Offset(index * step, y(pair.first.incomeCents)), Offset((index + 1) * step, y(pair.second.incomeCents)), strokeWidth = 5f, cap = StrokeCap.Round)
-        }
-    }
-}
-
-@Composable
-private fun Heatmap(values: Map<LocalDate, Int>, start: LocalDate, end: LocalDate) {
-    val dates = generateSequence(start) { it.plusDays(1) }.takeWhile { !it.isAfter(end) }.toList()
-    Canvas(Modifier.fillMaxWidth().height(96.dp)) {
-        val rows = 7
-        val columns = ((dates.size + rows - 1) / rows).coerceAtLeast(1)
-        val gap = 3.dp.toPx()
-        val cell = minOf((size.width - gap * (columns - 1)) / columns, (size.height - gap * (rows - 1)) / rows).coerceAtLeast(1f)
-        dates.forEachIndexed { index, date ->
-            val count = values[date] ?: 0
-            val color = when {
-                count >= 4 -> Color(0xFF166534)
-                count >= 2 -> Color(0xFF22C55E)
-                count == 1 -> Color(0xFFBBF7D0)
-                else -> AppColors.Border
-            }
-            drawRect(color, topLeft = Offset((index / rows) * (cell + gap), (index % rows) * (cell + gap)), size = Size(cell, cell))
         }
     }
 }
