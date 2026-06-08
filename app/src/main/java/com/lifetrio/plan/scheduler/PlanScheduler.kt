@@ -42,6 +42,9 @@ class PlanScheduler(
 
     fun workdayCalendarHasYear(year: Int): Boolean = workdayCalendar.hasYear(year)
 
+    fun isLegalWorkday(date: LocalDate, workdayOverrides: Map<LocalDate, Boolean> = emptyMap()): Boolean =
+        workdayCalendar.isLegalWorkday(date, workdayOverrides)
+
     private fun parseInts(value: String): Set<Int> =
         value.split(",")
             .mapNotNull { it.trim().toIntOrNull() }

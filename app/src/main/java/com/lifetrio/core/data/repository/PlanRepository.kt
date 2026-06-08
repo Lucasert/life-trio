@@ -13,6 +13,7 @@ import com.lifetrio.core.data.db.entity.PlanRuleType
 import com.lifetrio.core.data.db.entity.WorkdayOverrideEntity
 import com.lifetrio.plan.scheduler.PlanScheduler
 import kotlinx.coroutines.flow.Flow
+import java.time.DayOfWeek
 import java.time.LocalDate
 
 class PlanRepository(
@@ -128,6 +129,21 @@ class PlanRepository(
     }
 
     fun hasWorkdayCalendarFor(year: Int): Boolean = scheduler.workdayCalendarHasYear(year)
+
+    fun legalWorkdayOverrides(start: LocalDate, end: LocalDate): Map<LocalDate, Boolean> {
+        if (end.isBefore(start)) return emptyMap()
+        val result = linkedMapOf<LocalDate, Boolean>()
+        generateSequence(start) { it.plusDays(1) }
+            .takeWhile { !it.isAfter(end) }
+            .forEach { date ->
+                val regularWorkday = date.dayOfWeek != DayOfWeek.SATURDAY && date.dayOfWeek != DayOfWeek.SUNDAY
+                val legalWorkday = scheduler.isLegalWorkday(date)
+                if (regularWorkday != legalWorkday) {
+                    result[date] = legalWorkday
+                }
+            }
+        return result
+    }
 
     suspend fun setWorkdayOverride(date: LocalDate, isWorkday: Boolean) {
         workdayOverrideDao.upsert(WorkdayOverrideEntity(date, isWorkday))

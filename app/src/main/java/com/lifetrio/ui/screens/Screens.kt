@@ -513,6 +513,10 @@ fun PlanScreen(container: AppContainer) {
     val previewItems by container.planRepository.observeOccurrenceCounts(selectedDate, previewEnd).collectAsState(initial = emptyList())
     val monthCounts by container.planRepository.observeOccurrenceCounts(monthStart, monthEnd).collectAsState(initial = emptyList())
     val overrides by container.planRepository.observeWorkdayOverrides().collectAsState(initial = emptyList())
+    val builtInWorkdayOverrides = remember(monthStart, monthEnd) {
+        container.planRepository.legalWorkdayOverrides(monthStart, monthEnd)
+    }
+    val displayedWorkdayOverrides = builtInWorkdayOverrides + overrides.associate { it.date to it.isWorkday }
     var calendarOverrides by remember { mutableStateOf<List<DeviceCalendarDayOverride>>(emptyList()) }
     var calendarMessage by remember { mutableStateOf("未连接手机日历") }
     var hasCalendarPermission by remember {
@@ -526,26 +530,53 @@ fun PlanScreen(container: AppContainer) {
     var weekdays by remember { mutableStateOf(setOf(today.dayOfWeek.value)) }
     var monthDays by remember { mutableStateOf(setOf(today.dayOfMonth)) }
     var carry by remember { mutableStateOf(CarryStrategy.CarryNextDay) }
-
-    val calendarPermissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
-        hasCalendarPermission = granted
-        calendarMessage = if (granted) "已授权，准备同步手机日历" else "未授权手机日历，法定工作日使用内置规则"
-    }
+    var isCalendarSyncing by remember { mutableStateOf(false) }
 
     suspend fun syncDeviceCalendar() {
         if (!hasCalendarPermission) {
-            calendarMessage = "未授权手机日历，法定工作日使用内置规则"
+            calendarMessage = "请授权读取手机日历后再同步"
+            return
+        }
+        if (isCalendarSyncing) {
             return
         }
         val start = monthStart
         val end = maxOf(monthEnd, previewEnd)
-        val entries = withContext(Dispatchers.IO) {
-            DeviceCalendarReader(context).readWorkdayOverrides(start, end)
+        isCalendarSyncing = true
+        calendarMessage = "正在同步手机日历..."
+        try {
+            val result = withContext(Dispatchers.IO) {
+                DeviceCalendarReader(context).readWorkdayOverrideResult(start, end)
+            }
+            val entries = result.overrides
+            calendarOverrides = entries
+            entries.forEach { container.planRepository.setWorkdayOverride(it.date, it.isWorkday) }
+            container.planRepository.generateOccurrences(start, end)
+            calendarMessage = when {
+                entries.isNotEmpty() -> "已同步 ${entries.size} 天法定节假日/调休"
+                result.scannedEventCount > 0 -> "读取到 ${result.scannedEventCount} 条日历事件，但未识别到法定节假日/调休，已使用内置规则"
+                result.calendarCount > 0 -> "手机日历有 ${result.calendarCount} 个可读日历源，但本月无事件，已使用内置规则"
+                else -> "手机未暴露可读日历事件，已使用内置规则"
+            }
+        } catch (error: SecurityException) {
+            hasCalendarPermission = false
+            calendarMessage = "没有读取日历权限，请重新授权"
+            Log.e("LifeTrioPlan", "Calendar permission denied while syncing", error)
+        } catch (error: Exception) {
+            calendarMessage = "手机日历同步失败：${error.javaClass.simpleName}"
+            Log.e("LifeTrioPlan", "Calendar sync failed", error)
+        } finally {
+            isCalendarSyncing = false
         }
-        calendarOverrides = entries
-        entries.forEach { container.planRepository.setWorkdayOverride(it.date, it.isWorkday) }
-        container.planRepository.generateOccurrences(start, end)
-        calendarMessage = if (entries.isEmpty()) "手机日历没有识别到班休事件" else "已同步 ${entries.size} 条手机日历班休"
+    }
+
+    val calendarPermissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        hasCalendarPermission = granted
+        if (granted) {
+            scope.launch { syncDeviceCalendar() }
+        } else {
+            calendarMessage = "未授权手机日历，法定工作日使用内置规则"
+        }
     }
 
     LaunchedEffect(hasCalendarPermission, visibleMonth, selectedDate) {
@@ -631,12 +662,13 @@ fun PlanScreen(container: AppContainer) {
                             selectedDate = selectedDate,
                             today = today,
                             plansByDate = monthCounts.associate { it.date to it.count },
-                            workdayOverrides = overrides.associate { it.date to it.isWorkday },
+                            workdayOverrides = displayedWorkdayOverrides,
                             calendarOverrides = calendarOverrides.associateBy { it.date },
                             selectedItems = selectedItems,
                             previewCounts = previewItems.associate { it.date to it.count },
                             calendarMessage = calendarMessage,
                             hasCalendarPermission = hasCalendarPermission,
+                            isCalendarSyncing = isCalendarSyncing,
                             onPreviousMonth = { visibleMonth = visibleMonth.minusMonths(1) },
                             onNextMonth = { visibleMonth = visibleMonth.plusMonths(1) },
                             onSelectDate = { selectedDate = it },
@@ -706,12 +738,13 @@ fun PlanScreen(container: AppContainer) {
                             selectedDate = selectedDate,
                             today = today,
                             plansByDate = monthCounts.associate { it.date to it.count },
-                            workdayOverrides = overrides.associate { it.date to it.isWorkday },
+                            workdayOverrides = displayedWorkdayOverrides,
                             calendarOverrides = calendarOverrides.associateBy { it.date },
                             selectedItems = selectedItems,
                             previewCounts = previewItems.associate { it.date to it.count },
                             calendarMessage = calendarMessage,
                             hasCalendarPermission = hasCalendarPermission,
+                            isCalendarSyncing = isCalendarSyncing,
                             onPreviousMonth = { visibleMonth = visibleMonth.minusMonths(1) },
                             onNextMonth = { visibleMonth = visibleMonth.plusMonths(1) },
                             onSelectDate = { selectedDate = it },
@@ -1163,6 +1196,7 @@ private fun PlanCalendarColumn(
     previewCounts: Map<LocalDate, Int>,
     calendarMessage: String,
     hasCalendarPermission: Boolean,
+    isCalendarSyncing: Boolean,
     onPreviousMonth: () -> Unit,
     onNextMonth: () -> Unit,
     onSelectDate: (LocalDate) -> Unit,
@@ -1181,6 +1215,7 @@ private fun PlanCalendarColumn(
             calendarOverrides = calendarOverrides,
             calendarMessage = calendarMessage,
             hasCalendarPermission = hasCalendarPermission,
+            isCalendarSyncing = isCalendarSyncing,
             onPreviousMonth = onPreviousMonth,
             onNextMonth = onNextMonth,
             onSelectDate = onSelectDate,
@@ -1201,6 +1236,7 @@ private fun CalendarPanel(
     calendarOverrides: Map<LocalDate, DeviceCalendarDayOverride>,
     calendarMessage: String,
     hasCalendarPermission: Boolean,
+    isCalendarSyncing: Boolean,
     onPreviousMonth: () -> Unit,
     onNextMonth: () -> Unit,
     onSelectDate: (LocalDate) -> Unit,
@@ -1225,8 +1261,14 @@ private fun CalendarPanel(
             )
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth()) {
                 Text(calendarMessage, color = AppColors.Muted, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
-                TextButton(onClick = onRequestCalendar) {
-                    Text(if (hasCalendarPermission) "同步手机日历" else "连接手机日历")
+                TextButton(onClick = onRequestCalendar, enabled = !isCalendarSyncing) {
+                    Text(
+                        when {
+                            isCalendarSyncing -> "同步中..."
+                            hasCalendarPermission -> "同步手机日历"
+                            else -> "连接手机日历"
+                        }
+                    )
                 }
             }
         }
