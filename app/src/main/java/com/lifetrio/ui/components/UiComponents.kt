@@ -1,19 +1,20 @@
 package com.lifetrio.ui.components
 
 import androidx.compose.foundation.Canvas
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -22,17 +23,26 @@ import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Search
+import androidx.compose.material.icons.outlined.WarningAmber
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.SegmentedButton
+import androidx.compose.material3.SegmentedButtonDefaults
+import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.material3.TextField
 import androidx.compose.material3.TextFieldDefaults
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -42,18 +52,14 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import com.lifetrio.ui.theme.AppColors
-
-data class TabSpec(
-    val route: String,
-    val label: String,
-    val emoji: String
-)
+import com.lifetrio.ui.theme.LocalExtendedColors
+import com.lifetrio.ui.theme.Spacing
 
 @Composable
 fun AppPage(
@@ -63,9 +69,9 @@ fun AppPage(
     LazyColumn(
         modifier = modifier
             .fillMaxSize()
-            .background(AppColors.Background),
-        contentPadding = PaddingValues(start = 20.dp, top = 20.dp, end = 20.dp, bottom = 28.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp),
+            .background(MaterialTheme.colorScheme.background),
+        contentPadding = PaddingValues(start = Spacing.lg, top = Spacing.lg, end = Spacing.lg, bottom = Spacing.xl),
+        verticalArrangement = Arrangement.spacedBy(Spacing.md),
         content = content
     )
 }
@@ -83,13 +89,13 @@ fun ScreenHeader(
     ) {
         Column(
             modifier = Modifier.weight(1f),
-            verticalArrangement = Arrangement.spacedBy(5.dp)
+            verticalArrangement = Arrangement.spacedBy(Spacing.xxs)
         ) {
-            Text(title, style = MaterialTheme.typography.headlineMedium, color = AppColors.Text, fontWeight = FontWeight.Black)
-            Text(subtitle, style = MaterialTheme.typography.bodyMedium, color = AppColors.Muted, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            Text(title, style = MaterialTheme.typography.headlineMedium, color = MaterialTheme.colorScheme.onBackground)
+            Text(subtitle, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2, overflow = TextOverflow.Ellipsis)
         }
         if (trailing != null) {
-            Spacer(Modifier.width(12.dp))
+            Spacer(Modifier.width(Spacing.sm))
             trailing()
         }
     }
@@ -99,19 +105,25 @@ fun ScreenHeader(
 fun AppCard(
     modifier: Modifier = Modifier,
     danger: Boolean = false,
+    hero: Boolean = false,
     onClick: (() -> Unit)? = null,
     content: @Composable () -> Unit
 ) {
+    val containerColor = when {
+        danger -> MaterialTheme.colorScheme.errorContainer
+        hero -> MaterialTheme.colorScheme.surfaceContainerHigh
+        else -> MaterialTheme.colorScheme.surface
+    }
+    val shape = if (hero) MaterialTheme.shapes.extraLarge else MaterialTheme.shapes.large
     Card(
         modifier = modifier
             .fillMaxWidth()
             .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier),
-        shape = RoundedCornerShape(8.dp),
-        colors = CardDefaults.cardColors(containerColor = if (danger) AppColors.DangerSoft else AppColors.Surface),
-        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
-        border = BorderStroke(1.dp, if (danger) AppColors.Red.copy(alpha = 0.18f) else AppColors.Border)
+        shape = shape,
+        colors = CardDefaults.cardColors(containerColor = containerColor),
+        elevation = CardDefaults.cardElevation(defaultElevation = if (hero) 2.dp else 1.dp)
     ) {
-        Box(Modifier.padding(16.dp)) {
+        Box(Modifier.padding(Spacing.md)) {
             content()
         }
     }
@@ -125,19 +137,19 @@ fun PillSearchField(value: String, onValueChange: (String) -> Unit, placeholder:
         modifier = Modifier
             .fillMaxWidth()
             .height(56.dp),
-        placeholder = { Text(placeholder, color = AppColors.Muted) },
-        leadingIcon = { Text("🔎") },
+        placeholder = { Text(placeholder, color = MaterialTheme.colorScheme.onSurfaceVariant) },
+        leadingIcon = { Icon(Icons.Outlined.Search, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant) },
         singleLine = true,
-        shape = RoundedCornerShape(12.dp),
+        shape = CircleShape,
         colors = TextFieldDefaults.colors(
-            focusedContainerColor = AppColors.Surface,
-            unfocusedContainerColor = AppColors.Surface,
-            disabledContainerColor = AppColors.Surface,
+            focusedContainerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+            unfocusedContainerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+            disabledContainerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
             focusedIndicatorColor = Color.Transparent,
             unfocusedIndicatorColor = Color.Transparent,
-            cursorColor = AppColors.Blue,
-            focusedTextColor = AppColors.Text,
-            unfocusedTextColor = AppColors.Text
+            cursorColor = MaterialTheme.colorScheme.primary,
+            focusedTextColor = MaterialTheme.colorScheme.onSurface,
+            unfocusedTextColor = MaterialTheme.colorScheme.onSurface
         )
     )
 }
@@ -166,22 +178,30 @@ fun UnderlineField(
             focusedContainerColor = Color.Transparent,
             unfocusedContainerColor = Color.Transparent,
             disabledContainerColor = Color.Transparent,
-            focusedIndicatorColor = AppColors.Blue,
-            unfocusedIndicatorColor = AppColors.Border,
-            cursorColor = AppColors.Blue,
-            focusedLabelColor = AppColors.Blue,
-            unfocusedLabelColor = AppColors.Muted,
-            focusedTextColor = AppColors.Text,
-            unfocusedTextColor = AppColors.Text
+            focusedIndicatorColor = MaterialTheme.colorScheme.primary,
+            unfocusedIndicatorColor = MaterialTheme.colorScheme.outline,
+            cursorColor = MaterialTheme.colorScheme.primary,
+            focusedLabelColor = MaterialTheme.colorScheme.primary,
+            unfocusedLabelColor = MaterialTheme.colorScheme.onSurfaceVariant,
+            focusedTextColor = MaterialTheme.colorScheme.onSurface,
+            unfocusedTextColor = MaterialTheme.colorScheme.onSurface
         )
     )
 }
 
 @Composable
 fun FieldLabel(emoji: String, text: String) {
-    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Spacing.xs)) {
         Text(emoji)
-        Text(text, color = AppColors.Text, fontWeight = FontWeight.SemiBold)
+        Text(text, color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.SemiBold)
+    }
+}
+
+@Composable
+fun FieldLabel(icon: ImageVector, text: String) {
+    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Spacing.xs)) {
+        Icon(icon, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp))
+        Text(text, color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.SemiBold)
     }
 }
 
@@ -191,11 +211,10 @@ fun PrimaryButton(text: String, onClick: () -> Unit, modifier: Modifier = Modifi
         onClick = onClick,
         modifier = modifier
             .fillMaxWidth()
-            .height(54.dp),
+            .height(52.dp),
         enabled = enabled,
-        shape = RoundedCornerShape(12.dp),
-        colors = ButtonDefaults.buttonColors(containerColor = AppColors.Blue),
-        elevation = ButtonDefaults.buttonElevation(defaultElevation = 1.dp)
+        shape = CircleShape,
+        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
     ) {
         Text(text, fontWeight = FontWeight.Bold)
     }
@@ -203,14 +222,13 @@ fun PrimaryButton(text: String, onClick: () -> Unit, modifier: Modifier = Modifi
 
 @Composable
 fun FilterPill(text: String, selected: Boolean, onClick: () -> Unit, modifier: Modifier = Modifier) {
-    TextButton(
+    FilterChip(
+        selected = selected,
         onClick = onClick,
-        modifier = modifier.background(if (selected) AppColors.Blue else AppColors.BlueSoft, CircleShape),
-        shape = CircleShape,
-        contentPadding = PaddingValues(horizontal = 18.dp, vertical = 8.dp)
-    ) {
-        Text(text, color = if (selected) Color.White else AppColors.Text, fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium)
-    }
+        label = { Text(text, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+        modifier = modifier,
+        shape = CircleShape
+    )
 }
 
 @Composable
@@ -224,22 +242,36 @@ fun SoftChip(text: String, onClick: (() -> Unit)? = null) {
 
 @Composable
 fun EmptyState(title: String, subtitle: String, emoji: String) {
+    EmptyStateScaffold(title, subtitle) {
+        Text(emoji, style = MaterialTheme.typography.headlineMedium)
+    }
+}
+
+@Composable
+fun EmptyState(title: String, subtitle: String, icon: ImageVector) {
+    EmptyStateScaffold(title, subtitle) {
+        Icon(icon, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(28.dp))
+    }
+}
+
+@Composable
+private fun EmptyStateScaffold(title: String, subtitle: String, glyph: @Composable () -> Unit) {
     AppCard {
         Column(
             modifier = Modifier.fillMaxWidth(),
             horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(8.dp)
+            verticalArrangement = Arrangement.spacedBy(Spacing.xs)
         ) {
             Box(
                 modifier = Modifier
                     .size(54.dp)
-                    .background(AppColors.BlueSoft, CircleShape),
+                    .background(MaterialTheme.colorScheme.primaryContainer, CircleShape),
                 contentAlignment = Alignment.Center
             ) {
-                Text(emoji, style = MaterialTheme.typography.headlineMedium)
+                glyph()
             }
-            Text(title, color = AppColors.Text, fontWeight = FontWeight.Bold)
-            Text(subtitle, color = AppColors.Muted, textAlign = TextAlign.Center)
+            Text(title, color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Bold)
+            Text(subtitle, color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.Center)
         }
     }
 }
@@ -253,76 +285,103 @@ fun DashedUploadBox(text: String, trailing: String, onClick: () -> Unit, modifie
             .clickable(onClick = onClick),
         contentAlignment = Alignment.Center
     ) {
+        val outline = MaterialTheme.colorScheme.outline
         Canvas(Modifier.fillMaxSize()) {
             drawRoundRect(
-                color = AppColors.Border,
+                color = outline,
                 topLeft = Offset.Zero,
                 size = Size(size.width, size.height),
-                cornerRadius = CornerRadius(12.dp.toPx(), 12.dp.toPx()),
+                cornerRadius = CornerRadius(16.dp.toPx(), 16.dp.toPx()),
                 style = Stroke(width = 1.dp.toPx(), pathEffect = PathEffect.dashPathEffect(floatArrayOf(12f, 8f)))
             )
         }
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 18.dp),
+                .padding(horizontal = Spacing.lg),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
-            Text(text, color = AppColors.Blue, fontWeight = FontWeight.Medium)
-            Text(trailing, color = AppColors.Muted)
+            Text(text, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Medium)
+            Text(trailing, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
 }
 
 @Composable
 fun SectionTitle(text: String) {
-    Text(text, color = AppColors.Text, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+    Text(text, color = MaterialTheme.colorScheme.onSurface, style = MaterialTheme.typography.titleMedium)
 }
 
 @Composable
 fun Meter(progress: Float, danger: Boolean) {
-    Box(Modifier.fillMaxWidth().height(8.dp).background(AppColors.Border, CircleShape)) {
+    val shape = RoundedCornerShape(4.dp)
+    Box(Modifier.fillMaxWidth().height(8.dp).background(MaterialTheme.colorScheme.surfaceVariant, shape)) {
         Box(
             Modifier
                 .fillMaxWidth(progress.coerceIn(0f, 1f))
                 .height(8.dp)
-                .background(if (danger) AppColors.Red else AppColors.Blue, CircleShape)
+                .background(if (danger) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary, shape)
         )
     }
 }
 
 @Composable
-fun LifeTrioTabBar(tabs: List<TabSpec>, selectedRoute: String, onSelect: (String) -> Unit) {
-    val barShape = RoundedCornerShape(topStart = 18.dp, topEnd = 18.dp)
+fun WarningBanner(text: String, icon: ImageVector = Icons.Outlined.WarningAmber) {
+    val ext = LocalExtendedColors.current
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .background(AppColors.Surface, barShape)
-            .border(1.dp, AppColors.Border, barShape)
-            .padding(horizontal = 10.dp, vertical = 9.dp),
-        horizontalArrangement = Arrangement.SpaceAround,
-        verticalAlignment = Alignment.CenterVertically
+            .background(ext.warningContainer, MaterialTheme.shapes.medium)
+            .padding(horizontal = Spacing.md, vertical = Spacing.sm),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(Spacing.xs)
     ) {
-        tabs.forEach { tab ->
-            val selected = tab.route == selectedRoute
-            Column(
-                modifier = Modifier
-                    .weight(1f)
-                    .clickable { onSelect(tab.route) }
-                    .background(if (selected) AppColors.BlueSoft else Color.Transparent, RoundedCornerShape(12.dp))
-                    .padding(vertical = 6.dp),
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(2.dp)
+        Icon(icon, contentDescription = null, tint = ext.onWarningContainer, modifier = Modifier.size(20.dp))
+        Text(text, color = ext.onWarningContainer)
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun EditorSheet(
+    title: String,
+    onDismiss: () -> Unit,
+    content: @Composable ColumnScope.() -> Unit
+) {
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheetState) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = Spacing.lg)
+                .padding(bottom = Spacing.lg)
+                .navigationBarsPadding()
+                .imePadding(),
+            verticalArrangement = Arrangement.spacedBy(Spacing.md)
+        ) {
+            Text(title, style = MaterialTheme.typography.titleLarge, color = MaterialTheme.colorScheme.onSurface)
+            content()
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun SectionTabs(
+    options: List<String>,
+    selectedIndex: Int,
+    onSelect: (Int) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    SingleChoiceSegmentedButtonRow(modifier = modifier.fillMaxWidth()) {
+        options.forEachIndexed { index, label ->
+            SegmentedButton(
+                selected = index == selectedIndex,
+                onClick = { onSelect(index) },
+                shape = SegmentedButtonDefaults.itemShape(index = index, count = options.size)
             ) {
-                Text(tab.emoji, style = MaterialTheme.typography.titleMedium)
-                Text(
-                    tab.label,
-                    color = if (selected) AppColors.Blue else AppColors.Muted,
-                    fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
+                Text(label)
             }
         }
     }
