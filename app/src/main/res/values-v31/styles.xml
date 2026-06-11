@@ -3,5 +3,6 @@
     <style name="Theme.LifeTrio" parent="android:style/Theme.Material.Light.NoActionBar">
         <item name="android:windowBackground">#FAF6F0</item>
         <item name="android:windowLightStatusBar">true</item>
+        <item name="android:windowSplashScreenBackground">#FAF6F0</item>
     </style>
 </resources>
