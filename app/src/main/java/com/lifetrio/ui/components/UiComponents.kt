@@ -276,6 +276,23 @@ fun DashedUploadBox(text: String, trailing: String, onClick: () -> Unit, modifie
 }
 
 @Composable
+fun SectionTitle(text: String) {
+    Text(text, color = AppColors.Text, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+}
+
+@Composable
+fun Meter(progress: Float, danger: Boolean) {
+    Box(Modifier.fillMaxWidth().height(8.dp).background(AppColors.Border, CircleShape)) {
+        Box(
+            Modifier
+                .fillMaxWidth(progress.coerceIn(0f, 1f))
+                .height(8.dp)
+                .background(if (danger) AppColors.Red else AppColors.Blue, CircleShape)
+        )
+    }
+}
+
+@Composable
 fun LifeTrioTabBar(tabs: List<TabSpec>, selectedRoute: String, onSelect: (String) -> Unit) {
     val barShape = RoundedCornerShape(topStart = 18.dp, topEnd = 18.dp)
     Row(
