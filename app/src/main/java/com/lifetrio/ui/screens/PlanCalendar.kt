@@ -13,22 +13,34 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ChevronLeft
+import androidx.compose.material.icons.filled.ChevronRight
+import androidx.compose.material.icons.outlined.CalendarMonth
+import androidx.compose.material.icons.outlined.TaskAlt
+import androidx.compose.material.icons.outlined.Upcoming
 import androidx.compose.material3.Checkbox
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.lifetrio.plan.calendar.DeviceCalendarDayOverride
 import com.lifetrio.ui.components.AppCard
 import com.lifetrio.ui.components.FieldLabel
-import com.lifetrio.ui.components.FilterPill
-import com.lifetrio.ui.theme.AppColors
+import com.lifetrio.ui.theme.LocalExtendedColors
+import com.lifetrio.ui.theme.Spacing
 import java.time.LocalDate
 import java.time.YearMonth
 
@@ -53,7 +65,7 @@ internal fun PlanCalendarColumn(
     onSkip: (Long) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    Column(verticalArrangement = Arrangement.spacedBy(14.dp), modifier = modifier) {
+    Column(verticalArrangement = Arrangement.spacedBy(Spacing.md), modifier = modifier) {
         CalendarPanel(
             visibleMonth = visibleMonth,
             selectedDate = selectedDate,
@@ -91,12 +103,12 @@ private fun CalendarPanel(
     onRequestCalendar: () -> Unit
 ) {
     AppCard {
-        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            FieldLabel("🗓️", "日历 & 打卡")
+        Column(verticalArrangement = Arrangement.spacedBy(Spacing.sm)) {
+            FieldLabel(Icons.Outlined.CalendarMonth, "日历 & 打卡")
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth()) {
-                FilterPill("◀ 上月", selected = false, onClick = onPreviousMonth)
-                Text("${visibleMonth.year}年 ${visibleMonth.monthValue}月", color = AppColors.Text, fontWeight = FontWeight.Black)
-                FilterPill("下月 ▶", selected = false, onClick = onNextMonth)
+                IconButton(onClick = onPreviousMonth) { Icon(Icons.Default.ChevronLeft, contentDescription = "上月") }
+                Text("${visibleMonth.year}年 ${visibleMonth.monthValue}月", color = MaterialTheme.colorScheme.onSurface, style = MaterialTheme.typography.titleMedium)
+                IconButton(onClick = onNextMonth) { Icon(Icons.Default.ChevronRight, contentDescription = "下月") }
             }
             CalendarMonthGrid(
                 visibleMonth = visibleMonth,
@@ -108,7 +120,7 @@ private fun CalendarPanel(
                 onSelectDate = onSelectDate
             )
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth()) {
-                Text(calendarMessage, color = AppColors.Muted, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+                Text(calendarMessage, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
                 TextButton(onClick = onRequestCalendar, enabled = !isCalendarSyncing) {
                     Text(
                         when {
@@ -138,14 +150,14 @@ private fun CalendarMonthGrid(
     val days = (1..visibleMonth.lengthOfMonth()).map { visibleMonth.atDay(it) }
     val cells = List(leading) { null } + days
     val weeks = cells.chunked(7)
-    Column(verticalArrangement = Arrangement.spacedBy(7.dp)) {
-        Row(horizontalArrangement = Arrangement.spacedBy(7.dp), modifier = Modifier.fillMaxWidth()) {
+    Column(verticalArrangement = Arrangement.spacedBy(Spacing.xxs)) {
+        Row(horizontalArrangement = Arrangement.spacedBy(Spacing.xxs), modifier = Modifier.fillMaxWidth()) {
             listOf("日", "一", "二", "三", "四", "五", "六").forEach { day ->
-                Text(day, color = AppColors.Muted, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f), textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+                Text(day, color = MaterialTheme.colorScheme.onSurfaceVariant, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f), textAlign = androidx.compose.ui.text.style.TextAlign.Center)
             }
         }
         weeks.forEach { week ->
-            Row(horizontalArrangement = Arrangement.spacedBy(7.dp), modifier = Modifier.fillMaxWidth()) {
+            Row(horizontalArrangement = Arrangement.spacedBy(Spacing.xxs), modifier = Modifier.fillMaxWidth()) {
                 week.forEach { date ->
                     CalendarDayCell(
                         date = date,
@@ -177,35 +189,38 @@ private fun CalendarDayCell(
     onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val borderColor = when {
-        selected -> AppColors.Blue
-        isToday -> Color(0xFF93C5FD)
-        else -> AppColors.Border
-    }
+    val ext = LocalExtendedColors.current
+    val shape = RoundedCornerShape(12.dp)
     val background = when {
-        selected -> AppColors.BlueSoft
-        planCount > 0 -> Color(0xFFF0FDF4)
-        else -> AppColors.Surface
+        selected -> MaterialTheme.colorScheme.primaryContainer
+        planCount > 0 -> MaterialTheme.colorScheme.tertiaryContainer
+        else -> MaterialTheme.colorScheme.surface
     }
-    Box(
-        modifier = modifier
-            .aspectRatio(1f)
-            .background(background, CircleShape)
-            .border(width = if (selected) 2.dp else 1.dp, color = borderColor, shape = CircleShape)
-            .clickable(enabled = date != null, onClick = onClick)
-            .padding(4.dp),
-        contentAlignment = Alignment.Center
-    ) {
+    val borderWidth = when {
+        selected -> 2.dp
+        isToday -> 1.5.dp
+        else -> 0.dp
+    }
+    val cellModifier = modifier
+        .aspectRatio(1f)
+        .background(background, shape)
+        .then(
+            if (borderWidth > 0.dp) Modifier.border(width = borderWidth, color = MaterialTheme.colorScheme.primary, shape = shape)
+            else Modifier
+        )
+        .clickable(enabled = date != null, onClick = onClick)
+        .padding(Spacing.xxs)
+    Box(modifier = cellModifier, contentAlignment = Alignment.Center) {
         if (date != null) {
-            Text(date.dayOfMonth.toString(), color = AppColors.Text, fontWeight = if (selected || isToday) FontWeight.Bold else FontWeight.Normal)
+            Text(date.dayOfMonth.toString(), color = MaterialTheme.colorScheme.onSurface, fontWeight = if (selected || isToday) FontWeight.Bold else FontWeight.Normal)
             if (workdayOverride != null) {
-                Text(if (workdayOverride) "班" else "休", color = if (workdayOverride) AppColors.Blue else AppColors.Red, style = MaterialTheme.typography.labelSmall, modifier = Modifier.align(Alignment.TopEnd))
+                Text(if (workdayOverride) "班" else "休", color = if (workdayOverride) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error, style = MaterialTheme.typography.labelSmall, modifier = Modifier.align(Alignment.TopEnd))
             }
             if (planCount > 0) {
-                Text(planCount.toString(), color = AppColors.Green, style = MaterialTheme.typography.labelSmall, modifier = Modifier.align(Alignment.BottomCenter))
+                Text(planCount.toString(), color = ext.income, style = MaterialTheme.typography.labelSmall, modifier = Modifier.align(Alignment.BottomCenter))
             }
             if (!deviceTitle.isNullOrBlank()) {
-                Box(Modifier.size(5.dp).background(AppColors.Yellow, CircleShape).align(Alignment.TopStart))
+                Box(Modifier.size(5.dp).background(MaterialTheme.colorScheme.tertiary, CircleShape).align(Alignment.TopStart))
             }
         }
     }
@@ -218,18 +233,28 @@ private fun SelectedDatePlanPanel(
     onComplete: (Long) -> Unit,
     onSkip: (Long) -> Unit
 ) {
+    // observeToday only returns Pending/Carried occurrences; a completed item
+    // disappears from the flow. Track locally-checked ids so the tick is visible
+    // until the next emission removes the row.
+    var completing by remember { mutableStateOf(setOf<Long>()) }
     AppCard {
-        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            FieldLabel("✅", "${selectedDate} 待办")
+        Column(verticalArrangement = Arrangement.spacedBy(Spacing.sm)) {
+            FieldLabel(Icons.Outlined.TaskAlt, "$selectedDate 待办")
             if (items.isEmpty()) {
-                Text("无计划", color = AppColors.Muted, modifier = Modifier.align(Alignment.CenterHorizontally))
+                Text("无计划", color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.align(Alignment.CenterHorizontally))
             } else {
                 items.forEach { item ->
                     Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
-                        Checkbox(false, onCheckedChange = { onComplete(item.occurrenceId) })
+                        Checkbox(
+                            checked = item.occurrenceId in completing,
+                            onCheckedChange = {
+                                completing = completing + item.occurrenceId
+                                onComplete(item.occurrenceId)
+                            }
+                        )
                         Column(Modifier.weight(1f)) {
-                            Text(item.title, color = AppColors.Text, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                            if (item.note.isNotBlank()) Text(item.note, color = AppColors.Muted, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            Text(item.title, color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            if (item.note.isNotBlank()) Text(item.note, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
                         }
                         TextButton(onClick = { onSkip(item.occurrenceId) }) { Text("跳过") }
                     }
@@ -242,14 +267,14 @@ private fun SelectedDatePlanPanel(
 @Composable
 private fun WeekPreviewPanel(selectedDate: LocalDate, counts: Map<LocalDate, Int>) {
     AppCard {
-        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            FieldLabel("🔮", "未来一周计划预览")
+        Column(verticalArrangement = Arrangement.spacedBy(Spacing.xs)) {
+            FieldLabel(Icons.Outlined.Upcoming, "未来一周计划预览")
             (0L..6L).forEach { offset ->
                 val date = selectedDate.plusDays(offset)
                 val count = counts[date] ?: 0
                 Row(horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth()) {
-                    Text(date.toString(), color = AppColors.Text, fontWeight = FontWeight.SemiBold)
-                    Text(if (count == 0) "无计划" else "${count} 项计划", color = if (count == 0) AppColors.Muted else AppColors.Blue)
+                    Text(date.toString(), color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.SemiBold)
+                    Text(if (count == 0) "无计划" else "$count 项计划", color = if (count == 0) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.primary)
                 }
             }
         }
