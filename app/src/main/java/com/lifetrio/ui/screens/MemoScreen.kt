@@ -67,6 +67,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.core.content.FileProvider
 import androidx.navigation.NavHostController
+import com.lifetrio.navigateToTab
 import com.lifetrio.core.data.AppContainer
 import com.lifetrio.core.data.db.entity.CarryStrategy
 import com.lifetrio.core.data.db.entity.MemoEntity
@@ -205,7 +206,7 @@ fun MemoScreen(container: AppContainer, navController: NavHostController, planRo
                                     carryStrategy = CarryStrategy.CarryNextDay,
                                     sourceMemoId = memo.id
                                 )
-                                navController.navigate(planRoute)
+                                navController.navigateToTab(planRoute)
                             }
                         }
                     )
@@ -242,7 +243,7 @@ fun MemoScreen(container: AppContainer, navController: NavHostController, planRo
                                         sourceMemoId = memo.id
                                     )
                                     selectedMemo = null
-                                    navController.navigate(planRoute)
+                                    navController.navigateToTab(planRoute)
                                 }
                             },
                             onRemoveImage = { path ->

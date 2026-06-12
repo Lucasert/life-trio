@@ -114,11 +114,7 @@ private fun BottomBar(navController: NavHostController) {
                 selected = selected,
                 onClick = {
                     if (destination.route != route) {
-                        navController.navigate(destination.route) {
-                            popUpTo(navController.graph.findStartDestination().id) { saveState = true }
-                            launchSingleTop = true
-                            restoreState = true
-                        }
+                        navController.navigateToTab(destination.route)
                     }
                 },
                 icon = {
@@ -130,5 +126,18 @@ private fun BottomBar(navController: NavHostController) {
                 label = { Text(destination.label) }
             )
         }
+    }
+}
+
+/**
+ * Switch between bottom-tab destinations. All tab navigation — including jumps
+ * triggered from inside a screen (e.g. Home's budget card) — must go through
+ * here so the back stack keeps a single, consistent save/restore semantic.
+ */
+internal fun NavHostController.navigateToTab(route: String) {
+    navigate(route) {
+        popUpTo(graph.findStartDestination().id) { saveState = true }
+        launchSingleTop = true
+        restoreState = true
     }
 }

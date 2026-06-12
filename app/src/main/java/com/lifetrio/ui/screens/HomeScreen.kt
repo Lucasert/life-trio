@@ -31,6 +31,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavHostController
+import com.lifetrio.navigateToTab
 import com.lifetrio.core.data.AppContainer
 import com.lifetrio.core.data.db.entity.LedgerType
 import com.lifetrio.core.data.db.entity.toYuanText
@@ -56,7 +57,7 @@ fun HomeScreen(container: AppContainer, navController: NavHostController, ledger
     AppPage {
         item { ScreenHeader("life-trio", "把记录、账目、计划和密码收进一个地方") }
         item {
-            AppCard(danger = budget?.isWarning == true, hero = true, onClick = { navController.navigate(ledgerRoute) }) {
+            AppCard(danger = budget?.isWarning == true, hero = true, onClick = { navController.navigateToTab(ledgerRoute) }) {
                 Column(verticalArrangement = Arrangement.spacedBy(Spacing.sm)) {
                     FieldLabel(Icons.Filled.Savings, "本月预算")
                     Text(
