@@ -11,8 +11,6 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.ExperimentalLayoutApi
-import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -22,16 +20,23 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Password
-import androidx.compose.material.icons.filled.Visibility
-import androidx.compose.material.icons.filled.VisibilityOff
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.outlined.ContentCopy
+import androidx.compose.material.icons.outlined.DeleteOutline
+import androidx.compose.material.icons.outlined.Edit
+import androidx.compose.material.icons.outlined.Key
+import androidx.compose.material.icons.outlined.Lock
+import androidx.compose.material.icons.outlined.Visibility
+import androidx.compose.material.icons.outlined.VisibilityOff
+import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.collectAsState
@@ -57,16 +62,15 @@ import com.lifetrio.core.data.AppContainer
 import com.lifetrio.password.PasswordRecord
 import com.lifetrio.ui.components.AppCard
 import com.lifetrio.ui.components.AppPage
+import com.lifetrio.ui.components.EditorSheet
 import com.lifetrio.ui.components.EmptyState
-import com.lifetrio.ui.components.FieldLabel
-import com.lifetrio.ui.components.FilterPill
 import com.lifetrio.ui.components.PillSearchField
 import com.lifetrio.ui.components.PrimaryButton
 import com.lifetrio.ui.components.ScreenHeader
 import com.lifetrio.ui.components.SectionTitle
 import com.lifetrio.ui.components.SoftChip
 import com.lifetrio.ui.components.UnderlineField
-import com.lifetrio.ui.theme.AppColors
+import com.lifetrio.ui.theme.Spacing
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -83,6 +87,7 @@ fun PasswordScreen(container: AppContainer) {
     var query by remember { mutableStateOf("") }
     var editing by remember { mutableStateOf<PasswordRecord?>(null) }
     var selected by remember { mutableStateOf<PasswordRecord?>(null) }
+    var showEditor by remember { mutableStateOf(false) }
 
     DisposableEffect(lifecycleOwner, repository) {
         val observer = LifecycleEventObserver { _, event ->
@@ -90,6 +95,7 @@ fun PasswordScreen(container: AppContainer) {
                 repository.lock()
                 editing = null
                 selected = null
+                showEditor = false
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
@@ -99,7 +105,20 @@ fun PasswordScreen(container: AppContainer) {
         }
     }
 
-    Scaffold(snackbarHost = { SnackbarHost(snackbarHostState) }) { padding ->
+    Scaffold(
+        snackbarHost = { SnackbarHost(snackbarHostState) },
+        floatingActionButton = {
+            if (isUnlocked) {
+                FloatingActionButton(onClick = {
+                    selected = null
+                    editing = PasswordRecord(name = "", account = "", secret = "", target = "")
+                    showEditor = true
+                }) {
+                    Icon(Icons.Default.Add, contentDescription = "新增密码")
+                }
+            }
+        }
+    ) { padding ->
         if (!isUnlocked) {
             LockedPasswordScreen(
                 modifier = Modifier.padding(padding),
@@ -126,33 +145,23 @@ fun PasswordScreen(container: AppContainer) {
                 records = records.filter { it.matches(query) },
                 query = query,
                 onQuery = { query = it },
-                editing = editing,
                 selected = selected,
-                onNew = {
-                    selected = null
-                    editing = PasswordRecord(name = "", account = "", secret = "", target = "")
+                onSelect = {
+                    editing = null
+                    showEditor = false
+                    selected = it
                 },
                 onEdit = {
                     selected = null
                     editing = it
-                },
-                onSelect = {
-                    editing = null
-                    selected = it
-                },
-                onCancelEdit = { editing = null },
-                onSave = {
-                    scope.launch {
-                        repository.save(it)
-                        editing = null
-                        snackbarHostState.showSnackbar("已保存")
-                    }
+                    showEditor = true
                 },
                 onDelete = {
                     scope.launch {
                         repository.delete(it.id)
                         selected = null
                         editing = null
+                        showEditor = false
                         snackbarHostState.showSnackbar("已删除")
                     }
                 },
@@ -171,21 +180,40 @@ fun PasswordScreen(container: AppContainer) {
             )
         }
     }
+
+    val editingRecord = editing
+    if (showEditor && editingRecord != null) {
+        PasswordEditorSheet(
+            record = editingRecord,
+            onDismiss = {
+                showEditor = false
+                editing = null
+            },
+            onSave = {
+                scope.launch {
+                    repository.save(it)
+                    showEditor = false
+                    editing = null
+                    snackbarHostState.showSnackbar("已保存")
+                }
+            }
+        )
+    }
 }
 
 @Composable
 private fun LockedPasswordScreen(modifier: Modifier = Modifier, onUnlock: () -> Unit) {
-    Box(modifier = modifier.background(AppColors.Background)) {
+    Box(modifier = modifier.background(MaterialTheme.colorScheme.background)) {
         AppPage {
             item { ScreenHeader("密码", "本机验证后访问保险库") }
             item {
-                AppCard {
-                    Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
-                        Box(Modifier.size(62.dp).background(AppColors.BlueSoft, CircleShape), contentAlignment = Alignment.Center) {
-                            Icon(Icons.Default.Password, contentDescription = null, tint = AppColors.Blue)
+                AppCard(hero = true) {
+                    Column(verticalArrangement = Arrangement.spacedBy(Spacing.md)) {
+                        Box(Modifier.size(62.dp).background(MaterialTheme.colorScheme.primaryContainer, CircleShape), contentAlignment = Alignment.Center) {
+                            Icon(Icons.Outlined.Key, contentDescription = null, tint = MaterialTheme.colorScheme.onPrimaryContainer)
                         }
-                        Text("需要验证本机密码或指纹", color = AppColors.Text, fontWeight = FontWeight.Bold)
-                        Text("密码保险库只在验证通过后解密，离开页面或退到后台会立即锁定。", color = AppColors.Muted)
+                        Text("需要验证本机密码或指纹", color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Bold)
+                        Text("密码保险库只在验证通过后解密，离开页面或退到后台会立即锁定。", color = MaterialTheme.colorScheme.onSurfaceVariant)
                         PrimaryButton("解锁密码管理", onUnlock)
                     }
                 }
@@ -200,27 +228,16 @@ private fun PasswordVaultContent(
     records: List<PasswordRecord>,
     query: String,
     onQuery: (String) -> Unit,
-    editing: PasswordRecord?,
     selected: PasswordRecord?,
-    onNew: () -> Unit,
-    onEdit: (PasswordRecord) -> Unit,
     onSelect: (PasswordRecord) -> Unit,
-    onCancelEdit: () -> Unit,
-    onSave: (PasswordRecord) -> Unit,
+    onEdit: (PasswordRecord) -> Unit,
     onDelete: (PasswordRecord) -> Unit,
     onCopyAccount: (String) -> Unit,
     onCopySecret: (String) -> Unit
 ) {
     AppPage(modifier = modifier) {
-        item {
-            ScreenHeader("密码", "账号与密钥保险库") {
-                FilterPill("+ 新增", false, onNew)
-            }
-        }
+        item { ScreenHeader("密码", "账号与密钥保险库") }
         item { PillSearchField(query, onQuery, "搜索名称、账号、网站或应用") }
-        if (editing != null) {
-            item(key = "password-editor-${editing.id}") { PasswordEditor(editing, onSave, onCancelEdit) }
-        }
         if (selected != null) {
             item(key = "password-detail-${selected.id}") {
                 PasswordDetail(
@@ -234,69 +251,72 @@ private fun PasswordVaultContent(
         }
         item { SectionTitle("全部密码") }
         if (records.isEmpty()) {
-            item { EmptyState("暂无密码", "新增一个账号密码后会在这里显示", "🔐") }
+            item { EmptyState("暂无密码", "点击右下角按钮新增账号密码", Icons.Outlined.Key) }
         }
         items(records, key = { "password-${it.id}" }) { PasswordRow(it) { onSelect(it) } }
     }
 }
 
 @Composable
-private fun PasswordEditor(record: PasswordRecord, onSave: (PasswordRecord) -> Unit, onCancel: () -> Unit) {
+private fun PasswordEditorSheet(record: PasswordRecord, onDismiss: () -> Unit, onSave: (PasswordRecord) -> Unit) {
     var name by remember(record.id) { mutableStateOf(record.name) }
     var account by remember(record.id) { mutableStateOf(record.account) }
     var secret by remember(record.id) { mutableStateOf(record.secret) }
     var target by remember(record.id) { mutableStateOf(record.target) }
     var note by remember(record.id) { mutableStateOf(record.note) }
     var showSecret by remember(record.id) { mutableStateOf(false) }
-    AppCard {
-        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            FieldLabel("🔐", if (record.name.isBlank()) "新增密码" else "编辑密码")
-            UnderlineField(name, { name = it }, "名称")
-            UnderlineField(account, { account = it }, "账号")
-            UnderlineField(
-                secret,
-                { secret = it },
-                "密码",
-                visualTransformation = if (showSecret) VisualTransformation.None else PasswordVisualTransformation(),
-                trailingIcon = {
-                    IconButton(onClick = { showSecret = !showSecret }) {
-                        Icon(if (showSecret) Icons.Default.VisibilityOff else Icons.Default.Visibility, contentDescription = "显示或隐藏密码")
-                    }
+    EditorSheet(title = if (record.name.isBlank()) "新增密码" else "编辑密码", onDismiss = onDismiss) {
+        UnderlineField(name, { name = it }, "名称")
+        UnderlineField(account, { account = it }, "账号")
+        UnderlineField(
+            secret,
+            { secret = it },
+            "密码",
+            visualTransformation = if (showSecret) VisualTransformation.None else PasswordVisualTransformation(),
+            trailingIcon = {
+                IconButton(onClick = { showSecret = !showSecret }) {
+                    Icon(if (showSecret) Icons.Outlined.VisibilityOff else Icons.Outlined.Visibility, contentDescription = "显示或隐藏密码")
                 }
-            )
-            UnderlineField(target, { target = it }, "网站或应用")
-            UnderlineField(note, { note = it }, "备注")
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                PrimaryButton("保存", {
-                    onSave(record.copy(name = name.trim(), account = account.trim(), secret = secret, target = target.trim(), note = note.trim()))
-                }, modifier = Modifier.weight(1f), enabled = name.isNotBlank() && secret.isNotBlank())
-                TextButton(onClick = onCancel) { Text("取消") }
             }
-        }
+        )
+        UnderlineField(target, { target = it }, "网站或应用")
+        UnderlineField(note, { note = it }, "备注")
+        PrimaryButton("保存", {
+            onSave(record.copy(name = name.trim(), account = account.trim(), secret = secret, target = target.trim(), note = note.trim()))
+        }, enabled = name.isNotBlank() && secret.isNotBlank())
     }
 }
 
-@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun PasswordDetail(record: PasswordRecord, onEdit: () -> Unit, onDelete: () -> Unit, onCopyAccount: () -> Unit, onCopySecret: () -> Unit) {
     var showSecret by remember(record.id) { mutableStateOf(false) }
     AppCard {
-        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text(record.name, color = AppColors.Text, fontWeight = FontWeight.Bold)
-            Text("账号：${record.account.ifBlank { "未填写" }}", color = AppColors.Text)
-            Text("网站/应用：${record.target.ifBlank { "未填写" }}", color = AppColors.Muted)
+        Column(verticalArrangement = Arrangement.spacedBy(Spacing.xs)) {
+            Text(record.name, color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Bold)
+            Text("账号：${record.account.ifBlank { "未填写" }}", color = MaterialTheme.colorScheme.onSurface)
+            Text("网站/应用：${record.target.ifBlank { "未填写" }}", color = MaterialTheme.colorScheme.onSurfaceVariant)
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("密码：${if (showSecret) record.secret else "••••••••"}", color = AppColors.Text, modifier = Modifier.weight(1f))
+                Text("密码：${if (showSecret) record.secret else "••••••••"}", color = MaterialTheme.colorScheme.onSurface, modifier = Modifier.weight(1f))
                 IconButton(onClick = { showSecret = !showSecret }) {
-                    Icon(if (showSecret) Icons.Default.VisibilityOff else Icons.Default.Visibility, contentDescription = "显示或隐藏密码")
+                    Icon(if (showSecret) Icons.Outlined.VisibilityOff else Icons.Outlined.Visibility, contentDescription = "显示或隐藏密码")
                 }
             }
-            if (record.note.isNotBlank()) Text(record.note, color = AppColors.Muted)
-            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                FilterPill("复制账号", false, onCopyAccount)
-                FilterPill("复制密码", false, onCopySecret)
-                TextButton(onClick = onEdit) { Text("编辑") }
-                TextButton(onClick = onDelete) { Text("删除", color = AppColors.Red) }
+            if (record.note.isNotBlank()) Text(record.note, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                FilledTonalButton(onClick = onCopyAccount) {
+                    Icon(Icons.Outlined.ContentCopy, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(Spacing.xs))
+                    Text("账号")
+                }
+                Spacer(Modifier.width(Spacing.xs))
+                FilledTonalButton(onClick = onCopySecret) {
+                    Icon(Icons.Outlined.ContentCopy, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(Spacing.xs))
+                    Text("密码")
+                }
+                Spacer(Modifier.weight(1f))
+                IconButton(onClick = onEdit) { Icon(Icons.Outlined.Edit, contentDescription = "编辑") }
+                IconButton(onClick = onDelete) { Icon(Icons.Outlined.DeleteOutline, contentDescription = "删除", tint = MaterialTheme.colorScheme.error) }
             }
         }
     }
@@ -306,11 +326,11 @@ private fun PasswordDetail(record: PasswordRecord, onEdit: () -> Unit, onDelete:
 private fun PasswordRow(record: PasswordRecord, onClick: () -> Unit) {
     AppCard(onClick = onClick) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Icon(Icons.Default.Password, contentDescription = null, tint = AppColors.Blue)
-            Spacer(Modifier.width(10.dp))
+            Icon(Icons.Outlined.Lock, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+            Spacer(Modifier.width(Spacing.sm))
             Column(Modifier.weight(1f)) {
-                Text(record.name, color = AppColors.Text, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                Text(record.account, color = AppColors.Muted, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(record.name, color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(record.account, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
             if (record.target.isNotBlank()) SoftChip(record.target)
         }

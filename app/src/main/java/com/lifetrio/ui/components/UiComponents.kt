@@ -190,14 +190,6 @@ fun UnderlineField(
 }
 
 @Composable
-fun FieldLabel(emoji: String, text: String) {
-    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Spacing.xs)) {
-        Text(emoji)
-        Text(text, color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.SemiBold)
-    }
-}
-
-@Composable
 fun FieldLabel(icon: ImageVector, text: String) {
     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Spacing.xs)) {
         Icon(icon, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp))
@@ -238,13 +230,6 @@ fun SoftChip(text: String, onClick: (() -> Unit)? = null) {
         label = { Text(text, maxLines = 1, overflow = TextOverflow.Ellipsis) },
         shape = CircleShape
     )
-}
-
-@Composable
-fun EmptyState(title: String, subtitle: String, emoji: String) {
-    EmptyStateScaffold(title, subtitle) {
-        Text(emoji, style = MaterialTheme.typography.headlineMedium)
-    }
 }
 
 @Composable
