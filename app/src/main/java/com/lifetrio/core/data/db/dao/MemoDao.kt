@@ -34,8 +34,26 @@ interface MemoDao {
     @Insert
     suspend fun insert(memo: MemoEntity): Long
 
+    @Insert
+    suspend fun insertAll(memos: List<MemoEntity>)
+
+    @Insert
+    suspend fun insertAllCrossRefs(crossRefs: List<MemoTagCrossRef>)
+
     @Update
     suspend fun update(memo: MemoEntity)
+
+    @Query("DELETE FROM memos")
+    suspend fun deleteAll()
+
+    @Query("DELETE FROM memo_tag_cross_refs")
+    suspend fun deleteAllCrossRefs()
+
+    @Query("SELECT * FROM memos")
+    suspend fun getAll(): List<MemoEntity>
+
+    @Query("SELECT * FROM memo_tag_cross_refs")
+    suspend fun getAllCrossRefs(): List<MemoTagCrossRef>
 
     @Query("DELETE FROM memos WHERE id = :id")
     suspend fun delete(id: Long)

@@ -73,4 +73,17 @@ class LedgerRepository(
     suspend fun setBudget(month: YearMonth, amountCents: Long, warningRatio: Float = 0.8f) {
         budgetDao.upsert(BudgetEntity(month = month.toString(), amountCents = amountCents, warningRatio = warningRatio))
     }
+
+    // ── Import / Export helpers ──
+
+    suspend fun getAllEntries(): List<LedgerEntryEntity> = ledgerDao.getAll()
+
+    suspend fun getAllBudgets(): List<BudgetEntity> = budgetDao.getAll()
+
+    suspend fun importAll(entries: List<LedgerEntryEntity>, budgets: List<BudgetEntity>) {
+        ledgerDao.deleteAll()
+        budgetDao.deleteAll()
+        ledgerDao.insertAll(entries)
+        budgetDao.upsertAll(budgets)
+    }
 }

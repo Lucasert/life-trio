@@ -30,6 +30,15 @@ interface LedgerDao {
     @Insert
     suspend fun insert(entry: LedgerEntryEntity): Long
 
+    @Insert
+    suspend fun insertAll(entries: List<LedgerEntryEntity>)
+
+    @Query("DELETE FROM ledger_entries")
+    suspend fun deleteAll()
+
+    @Query("SELECT * FROM ledger_entries ORDER BY date DESC, createdAt DESC")
+    suspend fun getAll(): List<LedgerEntryEntity>
+
     @Query("DELETE FROM ledger_entries WHERE id = :id")
     suspend fun delete(id: Long)
 

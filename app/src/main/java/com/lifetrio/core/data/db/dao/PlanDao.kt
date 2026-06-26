@@ -92,4 +92,31 @@ interface PlanDao {
     @Insert
     suspend fun insertCompletion(completion: PlanCompletionEntity)
 
+    @Insert
+    suspend fun insertAllPlans(plans: List<PlanEntity>)
+
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun insertAllOccurrences(occurrences: List<PlanOccurrenceEntity>)
+
+    @Insert
+    suspend fun insertAllCompletions(completions: List<PlanCompletionEntity>)
+
+    @Query("SELECT * FROM plans ORDER BY createdAt DESC")
+    suspend fun getAllPlans(): List<PlanEntity>
+
+    @Query("SELECT * FROM plan_occurrences")
+    suspend fun getAllOccurrences(): List<PlanOccurrenceEntity>
+
+    @Query("SELECT * FROM plan_completions")
+    suspend fun getAllCompletions(): List<PlanCompletionEntity>
+
+    @Query("DELETE FROM plan_occurrences")
+    suspend fun deleteAllOccurrences()
+
+    @Query("DELETE FROM plan_completions")
+    suspend fun deleteAllCompletions()
+
+    @Query("DELETE FROM plans")
+    suspend fun deleteAllPlans()
+
 }

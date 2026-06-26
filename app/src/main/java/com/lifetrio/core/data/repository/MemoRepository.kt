@@ -82,4 +82,21 @@ class MemoRepository(
     suspend fun deleteMemo(id: Long) {
         memoDao.delete(id)
     }
+
+    // ── Import / Export helpers ──
+
+    suspend fun getAllMemos(): List<MemoEntity> = memoDao.getAll()
+
+    suspend fun getAllTags(): List<TagEntity> = tagDao.getAll()
+
+    suspend fun getAllCrossRefs(): List<MemoTagCrossRef> = memoDao.getAllCrossRefs()
+
+    suspend fun importAll(memos: List<MemoEntity>, tags: List<TagEntity>, crossRefs: List<MemoTagCrossRef>) {
+        memoDao.deleteAllCrossRefs()
+        memoDao.deleteAll()
+        tagDao.deleteAll()
+        tagDao.insertAll(tags)
+        memoDao.insertAll(memos)
+        memoDao.insertAllCrossRefs(crossRefs)
+    }
 }

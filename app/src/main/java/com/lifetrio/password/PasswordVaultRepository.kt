@@ -71,4 +71,20 @@ class PasswordVaultRepository(
         vaultFile.parentFile?.mkdirs()
         vaultFile.writeBytes(crypto.encrypt(PasswordVaultCodec.encode(records)))
     }
+
+    // ── Import / Export helpers ──
+
+    /** Returns the raw encrypted vault file bytes, or null if the vault file doesn't exist. */
+    fun exportRawBytes(): ByteArray? {
+        if (!vaultFile.exists()) return null
+        return vaultFile.readBytes()
+    }
+
+    /** Writes raw encrypted vault file bytes (imported from another device).
+     *  NOTE: Only works if the Android Keystore key on this device matches the one
+     *  used to encrypt the vault (typically the same device). */
+    fun importRawBytes(bytes: ByteArray) {
+        vaultFile.parentFile?.mkdirs()
+        vaultFile.writeBytes(bytes)
+    }
 }

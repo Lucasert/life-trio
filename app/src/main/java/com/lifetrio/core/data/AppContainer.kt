@@ -39,4 +39,10 @@ class AppContainer(context: Context) {
         vaultFile = File(context.applicationContext.filesDir, "password_vault.bin"),
         crypto = AndroidKeystorePasswordVaultCrypto()
     )
+    val exportImportManager = ExportImportManager(
+        memoRepository = memoRepository,
+        ledgerRepository = ledgerRepository,
+        planRepository = planRepository,
+        passwordVaultRepository = passwordVaultRepository
+    )
 }

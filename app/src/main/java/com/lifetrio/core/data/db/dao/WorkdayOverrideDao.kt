@@ -19,6 +19,12 @@ interface WorkdayOverrideDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsert(override: WorkdayOverrideEntity)
 
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertAll(overrides: List<WorkdayOverrideEntity>)
+
+    @Query("DELETE FROM workday_overrides")
+    suspend fun deleteAll()
+
     @Query("DELETE FROM workday_overrides WHERE date = :date")
     suspend fun delete(date: LocalDate)
 }

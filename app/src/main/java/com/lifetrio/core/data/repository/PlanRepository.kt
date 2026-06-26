@@ -152,4 +152,30 @@ class PlanRepository(
     suspend fun clearWorkdayOverride(date: LocalDate) {
         workdayOverrideDao.delete(date)
     }
+
+    // ── Import / Export helpers ──
+
+    suspend fun getAllPlans(): List<PlanEntity> = planDao.getAllPlans()
+
+    suspend fun getAllOccurrences(): List<PlanOccurrenceEntity> = planDao.getAllOccurrences()
+
+    suspend fun getAllCompletions(): List<PlanCompletionEntity> = planDao.getAllCompletions()
+
+    suspend fun getAllWorkdayOverrides(): List<WorkdayOverrideEntity> = workdayOverrideDao.allOnce()
+
+    suspend fun importAll(
+        plans: List<PlanEntity>,
+        occurrences: List<PlanOccurrenceEntity>,
+        completions: List<PlanCompletionEntity>,
+        overrides: List<WorkdayOverrideEntity>
+    ) {
+        planDao.deleteAllOccurrences()
+        planDao.deleteAllCompletions()
+        planDao.deleteAllPlans()
+        workdayOverrideDao.deleteAll()
+        planDao.insertAllPlans(plans)
+        planDao.insertAllOccurrences(occurrences)
+        planDao.insertAllCompletions(completions)
+        workdayOverrideDao.upsertAll(overrides)
+    }
 }
