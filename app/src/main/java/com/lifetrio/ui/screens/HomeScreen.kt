@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.items
@@ -24,6 +25,9 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.SegmentedButton
+import androidx.compose.material3.SegmentedButtonDefaults
+import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -43,6 +47,7 @@ import androidx.compose.ui.unit.dp
 import androidx.navigation.NavHostController
 import com.lifetrio.navigateToTab
 import com.lifetrio.core.data.AppContainer
+import com.lifetrio.core.data.ThemeMode
 import com.lifetrio.core.data.db.entity.LedgerType
 import com.lifetrio.core.data.db.entity.toYuanText
 import com.lifetrio.ui.components.AppCard
@@ -174,6 +179,45 @@ fun HomeScreen(container: AppContainer, navController: NavHostController, ledger
         }
         items(todayPlans.take(5), key = { "home-plan-${it.occurrenceId}" }) { item ->
             CompactPlanItem(item.title, item.note, item.status.name)
+        }
+
+        // ── Appearance section ──
+        item { Spacer(Modifier.size(Spacing.sm)) }
+        item { SectionTitle("外观") }
+        item {
+            val currentTheme by container.themePreferences.themeMode.collectAsState(initial = ThemeMode.SYSTEM)
+            AppCard {
+                Column(verticalArrangement = Arrangement.spacedBy(Spacing.sm)) {
+                    Text(
+                        "选择主题模式",
+                        color = MaterialTheme.colorScheme.onSurface,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                    SingleChoiceSegmentedButtonRow {
+                        ThemeMode.entries.forEachIndexed { index, mode ->
+                            SegmentedButton(
+                                selected = currentTheme == mode,
+                                onClick = {
+                                    scope.launch {
+                                        container.themePreferences.setThemeMode(mode)
+                                    }
+                                },
+                                shape = SegmentedButtonDefaults.itemShape(index, ThemeMode.entries.size),
+                                icon = { },  // 移除默认的打勾图标
+                                modifier = Modifier.height(40.dp)
+                            ) {
+                                Text(
+                                    when (mode) {
+                                        ThemeMode.SYSTEM -> "系统"
+                                        ThemeMode.LIGHT -> "亮色"
+                                        ThemeMode.DARK -> "暗色"
+                                    }
+                                )
+                            }
+                        }
+                    }
+                }
+            }
         }
 
         // ── Data Management section ──

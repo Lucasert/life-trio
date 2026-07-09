@@ -22,6 +22,8 @@ class AppContainer(context: Context) {
     private val workdayCalendar = ChinaWorkdayCalendar.default()
     val scheduler = PlanScheduler(workdayCalendar)
 
+    val themePreferences = ThemePreferences(context)
+
     val memoRepository = MemoRepository(
         memoDao = database.memoDao(),
         tagDao = database.tagDao()

@@ -20,8 +20,10 @@ import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -33,6 +35,7 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import com.lifetrio.core.data.AppContainer
+import com.lifetrio.core.data.ThemeMode
 import com.lifetrio.ui.screens.HomeScreen
 import com.lifetrio.ui.screens.LedgerScreen
 import com.lifetrio.ui.screens.MemoScreen
@@ -47,9 +50,7 @@ class MainActivity : FragmentActivity() {
         enableEdgeToEdge()
         val container = (application as LifeTrioApp).container
         setContent {
-            LifeTrioTheme {
-                LifeTrioApp(container)
-            }
+            LifeTrioApp(container)
         }
     }
 }
@@ -72,32 +73,43 @@ private fun LifeTrioApp(container: AppContainer) {
     val navController = rememberNavController()
     val today = LocalDate.now()
 
+    // 读取主题偏好
+    val themeMode by container.themePreferences.themeMode.collectAsState(initial = ThemeMode.SYSTEM)
+    val systemDarkTheme = isSystemInDarkTheme()
+    val darkTheme = when (themeMode) {
+        ThemeMode.SYSTEM -> systemDarkTheme
+        ThemeMode.LIGHT -> false
+        ThemeMode.DARK -> true
+    }
+
     LaunchedEffect(today) {
         container.planRepository.generateOccurrences(today.minusDays(1), today.plusDays(31))
     }
 
-    Scaffold(
-        bottomBar = { BottomBar(navController) }
-    ) { padding ->
-        NavHost(
-            navController = navController,
-            startDestination = Destination.Home.route,
-            modifier = Modifier.padding(padding)
-        ) {
-            composable(Destination.Home.route) {
-                HomeScreen(container, navController, Destination.Ledger.route)
-            }
-            composable(Destination.Memo.route) {
-                MemoScreen(container, navController, Destination.Plan.route)
-            }
-            composable(Destination.Ledger.route) {
-                LedgerScreen(container)
-            }
-            composable(Destination.Plan.route) {
-                PlanScreen(container)
-            }
-            composable(Destination.Password.route) {
-                PasswordScreen(container)
+    LifeTrioTheme(darkTheme = darkTheme) {
+        Scaffold(
+            bottomBar = { BottomBar(navController) }
+        ) { padding ->
+            NavHost(
+                navController = navController,
+                startDestination = Destination.Home.route,
+                modifier = Modifier.padding(padding)
+            ) {
+                composable(Destination.Home.route) {
+                    HomeScreen(container, navController, Destination.Ledger.route)
+                }
+                composable(Destination.Memo.route) {
+                    MemoScreen(container, navController, Destination.Plan.route)
+                }
+                composable(Destination.Ledger.route) {
+                    LedgerScreen(container)
+                }
+                composable(Destination.Plan.route) {
+                    PlanScreen(container)
+                }
+                composable(Destination.Password.route) {
+                    PasswordScreen(container)
+                }
             }
         }
     }
